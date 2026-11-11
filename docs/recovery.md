@@ -1,6 +1,6 @@
-# A recovery exercise I completed
+# A recovery exercise I completed in lab-01
 
-I backed up a small Kubernetes workload with persistent file data, restored it, and checked the restored file against its original SHA-256 digest.
+In lab-01, I backed up a small Kubernetes workload with persistent file data, restored it, and checked the restored file against its original SHA-256 digest. This exercise was not a lab-02 restore test.
 
 The workload used a PVC backed by Cinder and Ceph. Velero saved the Kubernetes objects, Kopia backed up the file data, and MinIO on the NAS held the backup.
 
