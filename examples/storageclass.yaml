@@ -1,0 +1,10 @@
+# Reference only: requires an installed Cinder CSI driver and a configured cloud.
+# This creates no workload or backup, and is not a complete storage installation.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: lab-block-retain
+provisioner: cinder.csi.openstack.org
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

@@ -1,0 +1,24 @@
+# Keep machine-local and generated material out of the public repo.
+.DS_Store
+.env
+.env.*
+!.env.example
+runtime/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.auto.tfvars
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+kubeconfig*
+clouds.yaml
+secure.yaml
+passwords.yml
+credentials*
+*.log
+__pycache__/
