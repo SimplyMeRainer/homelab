@@ -1,0 +1,63 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [../../vars/releases.yml]
+  vars:
+    cluster_name: lab-01
+    api_endpoint: api.lab.example:6443
+    api_vip: 203.0.113.10
+    node_ip: 203.0.113.11
+    pod_cidr: 10.244.0.0/16
+    service_cidr: 10.96.0.0/16
+    kube_vip_interface: ens3
+    kube_context: lab-01-admin@lab-01
+    inert_config:
+      apiVersion: v1
+      kind: Config
+      clusters:
+        - name: lab-01
+          cluster: {server: 'https://192.0.2.99:6443', certificate-authority-data: Zml4dHVyZS1ub3QtYS1jZXJ0}
+      users:
+        - name: fixture-admin
+          user: {token: fixture-not-a-real-token}
+      contexts:
+        - name: fixture
+          context: {cluster: lab-01, user: fixture-admin}
+      current-context: fixture
+    private_admin_config: {content: '{{ inert_config | to_yaml | b64encode }}'}
+    vip_credentials: {content: '{{ inert_config | to_yaml | b64encode }}'}
+    join_control_plane: true
+    # Inert fixture values, never real credentials.
+    join_token_result: {stdout: 'abcdef.0123456789abcdef'}
+    join_ca_hash_result: {stdout: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+    join_key_result: {stdout_lines: ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']}
+  tasks:
+    - name: Render real init configuration
+      ansible.builtin.template:
+        src: ../../roles/cluster/templates/kubeadm.yml.j2
+        dest: '{{ fixture_dir }}/kubeadm.yml'
+        mode: '0600'
+    - name: Render VIP configuration twice
+      ansible.builtin.template:
+        src: ../../roles/cluster/templates/kube-vip.yml.j2
+        dest: '{{ fixture_dir }}/{{ item }}.yml'
+        mode: '0600'
+      loop: [bootstrap, steady]
+      vars:
+        vip_credentials_file: "{{ 'super-admin.conf' if item == 'bootstrap' else 'admin.conf' }}"
+    - name: Render context-bound private output
+      ansible.builtin.template:
+        src: ../../roles/cluster/templates/admin.kubeconfig.j2
+        dest: '{{ fixture_dir }}/admin.kubeconfig'
+        mode: '0600'
+    - name: Render direct-node VIP credentials
+      ansible.builtin.template:
+        src: ../../roles/cluster/templates/vip.kubeconfig.j2
+        dest: '{{ fixture_dir }}/vip.kubeconfig'
+        mode: '0600'
+    - name: Render real join configuration
+      ansible.builtin.template:
+        src: ../../roles/cluster/templates/join.yml.j2
+        dest: '{{ fixture_dir }}/join.yml'
+        mode: '0600'

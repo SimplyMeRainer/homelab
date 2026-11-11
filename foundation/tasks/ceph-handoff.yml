@@ -1,0 +1,27 @@
+---
+- name: Create private Kolla handoff directories
+  ansible.builtin.file:
+    path: '{{ foundation_runtime }}/kolla/config/{{ item }}'
+    state: directory
+    mode: '0700'
+  loop: [glance, cinder, cinder/cinder-volume, cinder/cinder-backup, nova]
+  delegate_to: localhost
+  become: false
+- name: Write normalized configuration with fresh native FSID
+  ansible.builtin.copy:
+    content: >-
+      {{ foundation_minimal_conf.stdout | regex_replace('(?m)^\t+', '') }}
+    dest: '{{ foundation_runtime }}/kolla/config/{{ item }}/ceph.conf'
+    mode: '0600'
+  loop: [glance, cinder, nova]
+  delegate_to: localhost
+  become: false
+- name: Write only service keyrings, never the administrator key
+  ansible.builtin.copy:
+    content: "{{ (foundation_service_keyrings.results | selectattr('item.name', 'equalto', item.client) | first).stdout }}"
+    dest: '{{ foundation_runtime }}/kolla/config/{{ item.target }}/ceph.client.{{ item.client }}.keyring'
+    mode: '0600'
+  loop: '{{ foundation_ceph_handoffs }}'
+  delegate_to: localhost
+  become: false
+  no_log: true

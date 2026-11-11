@@ -1,0 +1,99 @@
+---
+- name: Validate automation scope before connecting to any guest
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Refuse unsupported lab before any guest mutation
+      ansible.builtin.assert:
+        that: (hostvars[groups['control_plane'][0]].cluster_name | default('')) == 'lab-01'
+        fail_msg: site.yml supports ONLY lab-01; use baseline.yml and the manual lab-02 procedure.
+    - name: Check exact HA topology and no host limit
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | length == 3
+          - groups['worker'] | length == 2
+          - ansible_limit is not defined
+          - (groups['control_plane'] | intersect(groups['worker'])) | length == 0
+          - (groups['control_plane'] + groups['worker']) | map('extract', hostvars, 'node_ip') | unique | list | length == 5
+        fail_msg: Full lab-01 inventory (3 control planes, 2 workers) required; --limit is unsafe.
+    - name: Refuse check mode as an installation simulation
+      ansible.builtin.assert:
+        that: not ansible_check_mode
+        fail_msg: Use --syntax-check and offline tests; site.yml --check cannot simulate kubeadm safely.
+
+- name: Read-only cluster identity gate across ALL guests before mutation
+  hosts: control_plane:worker
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Inspect ownership and refuse mismatches
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: preflight
+
+- name: Bootstrap first control plane and Cilium
+  hosts: control_plane
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: First control-plane initialization
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: init
+      when: inventory_hostname == groups['control_plane'][0]
+    - name: First control-plane networking
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: cilium
+      when: inventory_hostname == groups['control_plane'][0]
+
+- name: Join remaining control planes one at a time
+  hosts: control_plane
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Serialized control-plane enrollment
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: join
+      vars:
+        join_control_plane: true
+      when: inventory_hostname != groups['control_plane'][0]
+
+- name: Join workers after all control planes are ready
+  hosts: worker
+  serial: 1
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Worker enrollment
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: join
+      vars:
+        join_control_plane: false
+
+- name: Verify lab readiness and produce a private standalone context
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Final readiness and private output
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: finish
+      when: inventory_hostname == groups['control_plane'][0]

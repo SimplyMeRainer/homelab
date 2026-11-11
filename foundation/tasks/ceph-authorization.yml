@@ -1,0 +1,15 @@
+---
+- name: Require reviewed seed and explicit bootstrap opt-in
+  ansible.builtin.assert:
+    that:
+      - foundation_inputs_reviewed | default(false) | bool
+      - foundation_allow_ceph_bootstrap | default(false) | bool
+    fail_msg: Prepared Ubuntu 24.04 and trusted SSH seeds plus foundation_allow_ceph_bootstrap=true are required.
+- name: Require explicit operator acceptance of native cephadm SSH trust model
+  ansible.builtin.assert:
+    that:
+      - foundation_operator_accepts_cephadm_ssh_trust_model | default(false) | bool
+    fail_msg: >-
+      Native cephadm does NOT verify SSH host keys (known_hosts=None).
+      Only an operator on an isolated trusted management network may explicitly
+      accept this upstream trust boundary; this is NOT strict-host verification.

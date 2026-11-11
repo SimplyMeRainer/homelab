@@ -1,0 +1,26 @@
+secret:
+  enabled: true
+  create: false
+  hostMount: false
+  name: cinder-csi-cloud-config
+  filename: cloud.conf
+storageClass:
+  enabled: false
+clusterID: lab-02
+csi:
+  plugin:
+    image:
+      tag: v1.35.0
+    volumes:
+      - name: cacert
+        configMap:
+          name: openstack-ca
+    volumeMounts:
+      - name: cacert
+        mountPath: /etc/cacert
+        readOnly: true
+      - name: cloud-config
+        mountPath: /etc/config
+        readOnly: true
+    controllerPlugin:
+      replicas: 2

@@ -1,0 +1,36 @@
+---
+# FICTIONAL examples. Replace addresses, DNS, NICs, user and disk IDs before deployment.
+foundation_inputs_reviewed: false
+foundation_allow_ceph_bootstrap: false
+foundation_allow_osd_prepare: false
+foundation_allow_ceph_clients: false
+# OPERATOR decision, not a claim of host verification. See README trust boundary.
+foundation_operator_accepts_cephadm_ssh_trust_model: false
+foundation_runtime: "{{ playbook_dir }}/../runtime/foundation"
+foundation_domain: lab.example
+foundation_ssh_user: ubuntu
+foundation_network_interface: eno1
+foundation_external_interface: eno2
+foundation_provider_vlan: 120
+foundation_provider_name: public
+foundation_provider_type: vlan
+foundation_provider_physnet: physnet1
+foundation_provider_owner_project: admin
+foundation_provider_subnet_name: public-subnet
+foundation_provider_cidr: 198.51.100.0/24
+foundation_provider_gateway: 198.51.100.1
+foundation_provider_pool_start: 198.51.100.100
+foundation_provider_pool_end: 198.51.100.199
+foundation_internal_vip: 192.0.2.10
+foundation_external_vip: 192.0.2.11
+foundation_ceph_public_network: 192.0.2.0/24
+foundation_ceph_cluster_network: 192.0.2.0/24
+# Verify no overlap with all host/client routes and tenant/provider subnets.
+# Fictional internal appliance network; edit and verify no overlap with any route.
+foundation_octavia_management_cidr: 10.170.0.0/24
+foundation_hosts:
+  - {name: node01, address: 192.0.2.21, roles: [control, network, compute, ceph], osd_devices: [/dev/disk/by-id/REPLACE_NODE01_OSD]}
+  - {name: node02, address: 192.0.2.22, roles: [control, network, compute, ceph], osd_devices: [/dev/disk/by-id/REPLACE_NODE02_OSD]}
+  - {name: node03, address: 192.0.2.23, roles: [control, compute, ceph], osd_devices: [/dev/disk/by-id/REPLACE_NODE03_OSD]}
+  - {name: node04, address: 192.0.2.24, roles: [compute, ceph], osd_devices: [/dev/disk/by-id/REPLACE_NODE04_OSD]}
+  - {name: node05, address: 192.0.2.25, roles: [compute, ceph], osd_devices: [/dev/disk/by-id/REPLACE_NODE05_OSD]}

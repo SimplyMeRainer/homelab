@@ -1,0 +1,8 @@
+---
+- name: Disable only active fstab swap entries (spaces or tabs; preserve other filesystems)
+  ansible.builtin.replace:
+    path: '{{ swap_fstab_path }}'
+    regexp: '^(?![ \t]*#)([^\n]*?\S+[ \t]+\S+[ \t]+swap[ \t]+[^\n]*)$'
+    replace: '# disabled by homelab kit: \1'
+    backup: true
+  register: swap_persistence

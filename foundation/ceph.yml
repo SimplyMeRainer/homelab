@@ -1,0 +1,44 @@
+---
+- name: Local authorization gate before any remote connection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_tasks: tasks/ceph-authorization.yml
+- ansible.builtin.import_playbook: preflight.yml
+- name: Install Ceph prerequisites on explicit Ceph hosts
+  hosts: ceph
+  become: true
+  gather_facts: false
+  vars_files: [versions.yml]
+  tasks:
+    - name: Install host prerequisites through Ubuntu's signed repository
+      ansible.builtin.apt:
+        name: [podman, lvm2, chrony, python3]
+        state: present
+        update_cache: true
+    - name: Download pinned cephadm with verified checksum and TLS
+      ansible.builtin.get_url:
+        url: '{{ foundation_cephadm_url }}'
+        checksum: '{{ foundation_cephadm_checksum }}'
+        dest: /usr/local/sbin/cephadm
+        mode: '0755'
+        validate_certs: true
+    - name: Create private Ceph directory
+      ansible.builtin.file: {path: /etc/ceph, state: directory, mode: '0700'}
+    - name: Write bootstrap network configuration
+      ansible.builtin.copy:
+        dest: /etc/ceph/bootstrap.conf
+        mode: '0600'
+        content: |
+          [global]
+          public_network = {{ foundation_ceph_public_network }}
+          cluster_network = {{ foundation_ceph_cluster_network }}
+
+- name: Bootstrap fresh cluster and prepare explicitly selected OSDs
+  hosts: ceph[0]
+  become: true
+  gather_facts: false
+  vars_files: [versions.yml]
+  tasks:
+    - ansible.builtin.import_tasks: tasks/ceph-cluster.yml

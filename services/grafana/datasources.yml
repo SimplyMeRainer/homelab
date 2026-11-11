@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: Management Prometheus
+    uid: management-prometheus
+    type: prometheus
+    access: proxy
+    url: https://prometheus:9090
+    isDefault: true
+    basicAuth: true
+    basicAuthUser: monitor
+    jsonData:
+      tlsAuthWithCACert: true
+      tlsSkipVerify: false
+    secureJsonData:
+      basicAuthPassword: $MONITOR_PASSWORD
+      tlsCACert: $MANAGEMENT_CA_PEM

@@ -1,0 +1,15 @@
+---
+- name: Wait for TLS-authenticated API readiness
+  ansible.builtin.command:
+    argv:
+      - '{{ kubectl_binary | default("kubectl") }}'
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - '--context=kubernetes-admin@{{ cluster_name }}'
+      - '--server=https://{{ api_readiness_host | default(node_ip) }}:6443'
+      - get
+      - --raw=/readyz
+  register: api_ready
+  changed_when: false
+  until: api_ready.rc == 0 and api_ready.stdout == 'ok'
+  retries: 60
+  delay: 5

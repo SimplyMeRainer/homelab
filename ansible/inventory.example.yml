@@ -1,0 +1,24 @@
+---
+# FICTIONAL documentation-only addresses. Edit all values before running.
+# Prefer Terraform's native ansible_inventory output instead of maintaining this.
+all:
+  vars:
+    cluster_name: lab-01
+    kube_context: lab-01-admin@lab-01
+    api_endpoint: api.lab.example:6443
+    api_vip: 203.0.113.10
+    pod_cidr: 10.244.0.0/16  # illustrative fresh allocation, not a private deployment
+    service_cidr: 10.96.0.0/16  # must not overlap any infrastructure or pod network
+    ansible_user: operator
+    lab_inputs_confirmed: false
+    kube_vip_interface: ens3  # verify in your Ubuntu image; private interface, not floating IP
+  children:
+    control_plane:
+      hosts:
+        lab-01-cp-1: {ansible_host: 192.0.2.11, node_ip: 203.0.113.11}
+        lab-01-cp-2: {ansible_host: 192.0.2.12, node_ip: 203.0.113.12}
+        lab-01-cp-3: {ansible_host: 192.0.2.13, node_ip: 203.0.113.13}
+    worker:
+      hosts:
+        lab-01-worker-1: {ansible_host: 192.0.2.21, node_ip: 203.0.113.21}
+        lab-01-worker-2: {ansible_host: 192.0.2.22, node_ip: 203.0.113.22}

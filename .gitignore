@@ -1,5 +1,12 @@
 # Keep machine-local and generated material out of the public repo.
 .DS_Store
+.venv/
+.collections/
+config/local/
+*.tfvars
+!*.tfvars.example
+.pytest_cache/
+*.py[cod]
 .env
 .env.*
 !.env.example

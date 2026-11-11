@@ -1,0 +1,11 @@
+# Verified from upstream release endpoint and authenticated-HTTPS Helm indexes.
+# charts.lock.json contains SHA256 of downloaded chart archives, checked against indexes.
+kubernetes: "1.35.10"
+cilium: "1.19.10"
+cinderCSIChart: "2.35.0"
+cinderCSI: "v1.35.0"
+traefikChart: "42.3.2"
+veleroChart: "12.2.4"
+velero: "1.18.2"
+veleroAWSPlugin: "v1.14.0"
+rancherChart: "2.15.3"

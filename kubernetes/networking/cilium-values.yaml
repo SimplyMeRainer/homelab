@@ -1,0 +1,14 @@
+# kubeadm installs kube-proxy; do not skip its phase with these values.
+kubeProxyReplacement: false
+ipam:
+  mode: kubernetes
+routingMode: tunnel
+tunnelProtocol: vxlan
+operator:
+  replicas: 2
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: false

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Run from repository root after Ceph handoff and trusted TLS enrollment.
+set -euo pipefail
+umask 077
+: "${ALLOW_KOLLA_DEPLOY:?Set ALLOW_KOLLA_DEPLOY=reviewed only after approving all hosts}"
+[[ "$ALLOW_KOLLA_DEPLOY" == reviewed ]] || exit 2
+: "${AMPHORA_IMAGE:?Retained verified Amphora QCOW2 required}"
+[[ "${ALLOW_OCTAVIA_CERTIFICATES:-}" == reviewed ]] || { echo 'Explicit Octavia CA ceremony approval required' >&2; exit 2; }
+[[ "${ALLOW_AMPHORA_REGISTER:-}" == reviewed ]] || { echo 'Explicit Amphora registration approval required' >&2; exit 2; }
+[[ "${ALLOW_PROVIDER_ASSETS:-}" == reviewed ]] || { echo 'Explicit provider assets approval required' >&2; exit 2; }
+runtime={{ foundation_runtime | quote }}
+# kolla-genpwd creates new runtime secrets; it does not publish them.
+if [[ ! -s "$runtime/kolla/passwords.yml" ]]; then
+  seed=$(python -c 'from kolla_ansible import utils; print(utils.get_data_files_path("etc_examples", "kolla", "passwords.yml"))')
+  install -m 600 "$seed" "$runtime/kolla/passwords.yml"
+  kolla-genpwd -p "$runtime/kolla/passwords.yml"
+fi
+chmod 600 "$runtime/kolla/passwords.yml"
+for required in config/glance/ceph.conf config/glance/ceph.client.glance.keyring config/cinder/cinder-volume/ceph.client.cinder.keyring config/cinder/cinder-backup/ceph.client.cinder.keyring config/cinder/cinder-backup/ceph.client.cinder-backup.keyring config/nova/ceph.client.cinder.keyring certificates/haproxy.pem certificates/haproxy-internal.pem certificates/backend-cert.pem certificates/backend-key.pem certificates/ca/root.crt; do
+  [[ -s "$runtime/kolla/$required" ]] || { printf 'Missing protected handoff: %s\n' "$required" >&2; exit 2; }
+done
+kolla-ansible bootstrap-servers -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml"
+kolla-ansible prechecks -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml" -e enable_octavia=no
+kolla-ansible deploy -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml" -e enable_octavia=no
+kolla-ansible post-deploy -i "$runtime/inventory.ini" --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml"
+# Base identity/network/image APIs and toolbox now exist. Native admin auth stays
+# in this process; never echo credentials or enable shell tracing.
+set +x
+. "$runtime/kolla/admin-openrc.sh"
+# Refresh toolbox Octavia cloud entries before register/prepare modules.
+bash "$runtime/provider-assets.sh"
+kolla-ansible deploy -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml" --tags kolla_toolbox
+native=$(python -c 'from kolla_ansible import utils; print(utils.get_data_files_path("ansible"))')
+export ANSIBLE_ROLES_PATH="$native/roles"
+export ANSIBLE_LIBRARY="$native/library"
+export ANSIBLE_FILTER_PLUGINS="$native/filter_plugins"
+kolla-ansible deploy -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml" -p "$runtime/octavia-register.yml" -e "foundation_kolla_ansible_dir=$native"
+# External operator authentication/PKI ceremony, no credentials on argv.
+# Native admin authentication is process-local; never trace or print it.
+: "${AMPHORA_IMAGE:?Build and retain verified Amphora before this stage}"
+bash "$runtime/amphora-register.sh"
+python "$runtime/octavia-certificates.py"
+kolla-ansible prechecks -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml"
+# Full native fresh-install convergence includes common/shared loadbalancer
+# fragments and SQL routes, then Octavia register -> prepare -> config -> bootstrap.
+kolla-ansible deploy -i "$runtime/inventory.ini" --become --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml"
+kolla-ansible post-deploy -i "$runtime/inventory.ini" --configdir "$runtime/kolla" --passwords "$runtime/kolla/passwords.yml"
+# post-deploy native admin credentials stay in runtime/kolla, never Git.
+find "$runtime/kolla" -type f -exec chmod 600 {} +

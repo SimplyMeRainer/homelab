@@ -1,0 +1,5 @@
+# Obtain an Ubuntu 24.04 amd64 cloud image and authenticate SHA256SUMS signature first.
+image_path = "../../runtime/images/noble-server-cloudimg-amd64.img"
+# Replace with the exact authenticated 64-character SHA256, not a fabricated pin.
+image_sha256 = "REPLACE_WITH_AUTHENTICATED_UPSTREAM_SHA256"
+image_name = "kit-ubuntu-24.04"

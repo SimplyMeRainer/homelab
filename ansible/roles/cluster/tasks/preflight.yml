@@ -1,0 +1,60 @@
+---
+- name: Validate reviewed host and cluster inputs before mutation
+  ansible.builtin.assert:
+    that:
+      - ansible_limit is not defined
+      - lab_inputs_confirmed | default(false) | bool
+      - cluster_name == hostvars[groups['control_plane'][0]].cluster_name
+      - api_endpoint == hostvars[groups['control_plane'][0]].api_endpoint
+      - api_vip == hostvars[groups['control_plane'][0]].api_vip
+      - pod_cidr == hostvars[groups['control_plane'][0]].pod_cidr
+      - service_cidr == hostvars[groups['control_plane'][0]].service_cidr
+      - cluster_name in ['lab-01', 'lab-02']
+      - node_ip is defined
+      - api_vip is defined
+      - kube_vip_interface is defined
+      - api_endpoint is match('^[A-Za-z0-9.-]+:6443$')
+      - kube_context == cluster_name + '-admin@' + cluster_name
+      - pod_cidr is defined
+      - service_cidr is defined
+      - inventory_hostname is match('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+    fail_msg: Review complete lab-01/lab-02 inputs, private node IPs, interface, DNS/VIP and context.
+- name: Establish immutable expected identity
+  ansible.builtin.set_fact:
+    expected_identity:
+      cluster_name: '{{ cluster_name }}'
+      api_endpoint: '{{ api_endpoint }}'
+      api_vip: '{{ api_vip }}'
+      pod_cidr: '{{ pod_cidr }}'
+      service_cidr: '{{ service_cidr }}'
+      node_ip: '{{ node_ip }}'
+      kube_vip_interface: '{{ kube_vip_interface }}'
+      version: '{{ kubernetes_version }}'
+      topology: "{{ groups['control_plane'] + groups['worker'] }}"
+- name: Inspect existing ownership marker
+  ansible.builtin.stat:
+    path: /etc/kubernetes/lab-kit-identity.json
+  register: ownership_marker
+- name: Inspect existing cluster state (read only)
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop:
+    - /etc/kubernetes/admin.conf
+    - /etc/kubernetes/kubelet.conf
+    - /etc/kubernetes/pki/ca.crt
+    - /etc/kubernetes/manifests/kube-apiserver.yaml
+    - /var/lib/etcd/member
+  register: cluster_state
+- name: Refuse adoption of an unmarked cluster
+  ansible.builtin.assert:
+    that: ownership_marker.stat.exists or (cluster_state.results | selectattr('stat.exists') | list | length == 0)
+    fail_msg: Existing unowned cluster state; refusing adoption/reset. Use fresh guests or an audited manual recovery.
+- name: Read existing identity
+  ansible.builtin.slurp:
+    src: /etc/kubernetes/lab-kit-identity.json
+  register: existing_identity
+  when: ownership_marker.stat.exists
+- name: Compare immutable ownership against reviewed inputs
+  ansible.builtin.import_tasks: identity-check.yml
+- name: Admit existing init and kubelet state before any host may mutate
+  ansible.builtin.import_tasks: state-admission.yml

@@ -1,0 +1,304 @@
+name: homelab-management
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:11.0.3-rootless@sha256:691657c7e64af7730a2e885e6d022cf16ae60724931c5392bd61838afadcaeba
+    restart: unless-stopped
+    volumes:
+    - forgejo-data:/var/lib/gitea
+    - forgejo-config:/etc/gitea
+    - ${TLS_DIR:?}/ca.crt:/run/ca.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/forgejo.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/forgejo.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:3000:3000
+    environment:
+      SSL_CERT_FILE: /run/ca.crt
+      FORGEJO__server__PROTOCOL: https
+      FORGEJO__server__HTTP_PORT: '3000'
+      FORGEJO__server__DOMAIN: ${FORGEJO_HOST:?}
+      FORGEJO__server__ROOT_URL: https://${FORGEJO_HOST:?}:3000/
+      FORGEJO__server__CERT_FILE: /run/tls.crt
+      FORGEJO__server__KEY_FILE: /run/tls.key
+      FORGEJO__server__DISABLE_SSH: 'true'
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__database__PATH: /var/lib/gitea/data/forgejo.db
+      FORGEJO__security__INSTALL_LOCK: 'true'
+      FORGEJO__security__SECRET_KEY_URI: file:/run/secrets/forgejo_secret_key
+      FORGEJO__security__INTERNAL_TOKEN_URI: file:/run/secrets/forgejo_internal_token
+      FORGEJO__service__DISABLE_REGISTRATION: 'true'
+      FORGEJO__actions__ENABLED: 'false'
+    secrets:
+    - forgejo_secret_key
+    - forgejo_internal_token
+  minio:
+    image: homelab-minio:RELEASE.2025-09-07T16-13-09Z-source
+    build:
+      context: ./minio
+    restart: unless-stopped
+    user: 1000:1000
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - exec minio server /data --address :9000 --console-address :9001 --certs-dir /run/minio-tls
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      MINIO_BROWSER_REDIRECT_URL: https://${MINIO_HOST:?}:9001
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:9000:9000
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:9001:9001
+    volumes:
+    - minio-data:/data
+    - ${TLS_DIR:?}/minio.crt:/run/minio-tls/public.crt:ro
+    - ${TLS_DIR:?}/minio.key:/run/minio-tls/private.key:ro
+    secrets:
+    - minio_root_user
+    - minio_root_password
+  vault:
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    image: hashicorp/vault:1.20.4@sha256:268bb80aa9c6d13d65fcfa05c0c268caca068952240a8087291a6ce0b66e3a10
+    restart: unless-stopped
+    volumes:
+    - vault-data:/vault/file
+    - vault-audit:/vault/audit
+    - ./vault/vault.hcl:/vault/config/vault.hcl:ro
+    - ${TLS_DIR:?}/ca.crt:/run/ca.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/vault.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/vault.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:8200:8200
+    user: 100:1000
+    entrypoint:
+    - vault
+    command:
+    - server
+    - -config=/vault/config/vault.hcl
+    cap_add:
+    - IPC_LOCK
+    environment:
+      VAULT_ADDR: https://${VAULT_HOST:?}:8200
+      VAULT_CACERT: /run/ca.crt
+  postgres:
+    image: postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
+    restart: unless-stopped
+    volumes:
+    - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+    - postgres_password
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U keycloak -d keycloak
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.1@sha256:bbb299c7e58a2c61c683dc3439da3e2698e005ca88ba6fd249629311d70250ab
+    restart: unless-stopped
+    volumes:
+    - ./keycloak/lab-realm.json:/opt/keycloak/data/import/lab-realm.json:ro
+    - ${IDENTITY_CA_FILE:?set exported public IPA CA}:/opt/keycloak/conf/truststores/ipa-ca.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/keycloak.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/keycloak.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:8443:8443
+    entrypoint:
+    - /bin/bash
+    - -ec
+    command:
+    - >-
+      KC_DB_PASSWORD="$$(cat /run/secrets/postgres_password)";
+      KC_BOOTSTRAP_ADMIN_PASSWORD="$$(cat /run/secrets/keycloak_admin_password)";
+      LDAP_BIND_PASSWORD="$$(cat /run/secrets/ldap_bind_password)";
+      GRAFANA_OIDC_SECRET="$$(cat /run/secrets/grafana_oidc_secret)";
+      FORGEJO_OIDC_SECRET="$$(cat /run/secrets/forgejo_oidc_secret)";
+      export KC_DB_PASSWORD KC_BOOTSTRAP_ADMIN_PASSWORD LDAP_BIND_PASSWORD GRAFANA_OIDC_SECRET FORGEJO_OIDC_SECRET;
+      exec /opt/keycloak/bin/kc.sh start --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_BOOTSTRAP_ADMIN_USERNAME: bootstrap-admin
+      KC_HOSTNAME: https://${KEYCLOAK_HOST:?}:8443
+      KC_HTTPS_CERTIFICATE_FILE: /run/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /run/tls.key
+      KC_HTTP_ENABLED: 'false'
+      KC_HEALTH_ENABLED: 'true'
+      KC_METRICS_ENABLED: 'true'
+      LDAP_URL: ${LDAP_URL:?}
+      LDAP_USERS_DN: ${LDAP_USERS_DN:?}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:?}
+      LDAP_GROUP_DN: ${LDAP_GROUP_DN:?}
+      GRAFANA_REDIRECT_URI: https://${GRAFANA_HOST:?}:3001/login/generic_oauth
+      FORGEJO_REDIRECT_URI: https://${FORGEJO_HOST:?}:3000/user/oauth2/keycloak/callback
+    secrets:
+    - postgres_password
+    - keycloak_admin_password
+    - ldap_bind_password
+    - grafana_oidc_secret
+    - forgejo_oidc_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+  prometheus:
+    image: prom/prometheus:v3.6.0@sha256:76947e7ef22f8a698fc638f706685909be425dbe09bd7a2cd7aca849f79b5f64
+    restart: unless-stopped
+    volumes:
+    - prometheus-data:/prometheus
+    - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - ./monitoring/rules.yml:/etc/prometheus/rules.yml:ro
+    - ${SECRET_DIR:?}/monitor-web.yml:/run/monitor-web.yml:ro
+    - ${TLS_DIR:?}/ca.crt:/run/ca.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/prometheus.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/prometheus.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:9090:9090
+    command:
+    - --config.file=/etc/prometheus/prometheus.yml
+    - --storage.tsdb.path=/prometheus
+    - --storage.tsdb.retention.time=30d
+    - --web.config.file=/run/monitor-web.yml
+    - --web.external-url=https://${PROMETHEUS_HOST:?}:9090
+    secrets:
+    - monitor_password
+  alertmanager:
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    restart: unless-stopped
+    volumes:
+    - alertmanager-data:/alertmanager
+    - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    - ${SECRET_DIR:?}/monitor-web.yml:/run/monitor-web.yml:ro
+    - ${TLS_DIR:?set TLS_DIR}/alertmanager.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/alertmanager.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:9093:9093
+    command:
+    - --config.file=/etc/alertmanager/alertmanager.yml
+    - --storage.path=/alertmanager
+    - --web.config.file=/run/monitor-web.yml
+    - --cluster.listen-address=
+    - --web.external-url=https://${ALERTMANAGER_HOST:?}:9093
+  grafana:
+    image: grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
+    restart: unless-stopped
+    volumes:
+    - grafana-data:/var/lib/grafana
+    - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    - ${TLS_DIR:?}/ca.crt:/run/ca.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/grafana.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/grafana.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:3001:3000
+    environment:
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /run/tls.crt
+      GF_SERVER_CERT_KEY: /run/tls.key
+      GF_SERVER_ROOT_URL: https://${GRAFANA_HOST:?}:3001/
+      GF_SECURITY_ADMIN_USER: local-recovery-admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_AUTH_GENERIC_OAUTH_ENABLED: 'true'
+      GF_AUTH_GENERIC_OAUTH_NAME: FreeIPA via Keycloak
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: 'true'
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /run/secrets/grafana_oidc_secret
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://${KEYCLOAK_HOST:?}:8443/realms/lab/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://${KEYCLOAK_HOST:?}:8443/realms/lab/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: https://${KEYCLOAK_HOST:?}:8443/realms/lab/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_TLS_CLIENT_CA: /run/ca.crt
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: contains(groups[*], 'grafana-users') && 'Viewer'
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: 'true'
+      GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: 'false'
+    secrets:
+    - grafana_admin_password
+    - source: grafana_oidc_secret_grafana
+      target: grafana_oidc_secret
+    - monitor_password_grafana
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - MONITOR_PASSWORD="$$(cat /run/secrets/monitor_password_grafana)"; MANAGEMENT_CA_PEM="$$(cat /run/ca.crt)"; export MONITOR_PASSWORD MANAGEMENT_CA_PEM; exec /run.sh
+  n8n:
+    image: n8nio/n8n:1.113.3@sha256:57f95a26b1b28527053fba6316d9d046395d9b4da9d0da486e838384a38fcf37
+    restart: unless-stopped
+    volumes:
+    - n8n-data:/home/node/.n8n
+    - ${TLS_DIR:?set TLS_DIR}/n8n.crt:/run/tls.crt:ro
+    - ${TLS_DIR:?set TLS_DIR}/n8n.key:/run/tls.key:ro
+    ports:
+    - ${BIND_ADDRESS:?set an explicit management IPv4}:5678:5678
+    environment:
+      N8N_HOST: ${N8N_HOST:?}
+      N8N_PORT: '5678'
+      N8N_PROTOCOL: https
+      N8N_SSL_CERT: /run/tls.crt
+      N8N_SSL_KEY: /run/tls.key
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST:?}:5678/
+      WEBHOOK_URL: https://${N8N_HOST:?}:5678/
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_PERSONALIZATION_ENABLED: 'false'
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'true'
+      N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: 'true'
+      NODES_EXCLUDE: '["n8n-nodes-base.executeCommand", "n8n-nodes-base.readWriteFile"]'
+      N8N_RUNNERS_ENABLED: 'false'
+    secrets:
+    - n8n_encryption_key
+    entrypoint:
+    - tini
+    - --
+    - /bin/sh
+    - -ec
+    command:
+    - N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)"; export N8N_ENCRYPTION_KEY; exec /docker-entrypoint.sh
+volumes:
+  forgejo-data: {}
+  forgejo-config: {}
+  minio-data: {}
+  vault-data: {}
+  vault-audit: {}
+  postgres-data: {}
+  prometheus-data: {}
+  alertmanager-data: {}
+  grafana-data: {}
+  n8n-data: {}
+secrets:
+  postgres_password:
+    file: ${SECRET_DIR:?}/postgres_password
+  keycloak_admin_password:
+    file: ${SECRET_DIR:?}/keycloak_admin_password
+  ldap_bind_password:
+    file: ${SECRET_DIR:?}/ldap_bind_password
+  grafana_admin_password:
+    file: ${SECRET_DIR:?}/grafana_admin_password
+  grafana_oidc_secret:
+    file: ${SECRET_DIR:?}/grafana_oidc_secret
+  grafana_oidc_secret_grafana:
+    file: ${SECRET_DIR:?}/grafana_oidc_secret_grafana
+  forgejo_oidc_secret:
+    file: ${SECRET_DIR:?}/forgejo_oidc_secret
+  forgejo_secret_key:
+    file: ${SECRET_DIR:?}/forgejo_secret_key
+  forgejo_internal_token:
+    file: ${SECRET_DIR:?}/forgejo_internal_token
+  minio_root_user:
+    file: ${SECRET_DIR:?}/minio_root_user
+  minio_root_password:
+    file: ${SECRET_DIR:?}/minio_root_password
+  n8n_encryption_key:
+    file: ${SECRET_DIR:?}/n8n_encryption_key
+  monitor_password:
+    file: ${SECRET_DIR:?}/monitor_password
+  monitor_password_grafana:
+    file: ${SECRET_DIR:?}/monitor_password_grafana

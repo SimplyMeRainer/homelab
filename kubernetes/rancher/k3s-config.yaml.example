@@ -1,0 +1,13 @@
+# Edit privately; Terraform produces this separate VM, not an existing machine.
+node-name: rancher-management-cp-01
+node-ip: 192.0.2.11
+advertise-address: 192.0.2.11
+write-kubeconfig-mode: "0600"
+tls-san:
+  - rancher.lab.example
+  - REPLACE_MANAGEMENT_FLOATING_IP
+disable:
+  - traefik
+  - servicelb
+cluster-cidr: 10.42.0.0/16
+service-cidr: 10.43.0.0/16

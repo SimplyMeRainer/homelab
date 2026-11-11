@@ -1,0 +1,50 @@
+---
+- name: Require reviewed seeds before any host connection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require prepared OS and authenticated SSH enrollment
+      ansible.builtin.assert:
+        that: [foundation_inputs_reviewed | default(false) | bool]
+        fail_msg: Prepared Ubuntu 24.04, trusted SSH host keys, DNS/NTP and selected EMPTY by-id disks must be reviewed first.
+- name: Read-only host and selected-disk inspection
+  hosts: baremetal
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Require supported OS and network interfaces
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version == '24.04'
+          - foundation_network_interface in ansible_facts.interfaces
+          - foundation_external_interface in ansible_facts.interfaces
+          - foundation_external_interface != foundation_network_interface
+          - ansible_facts[foundation_external_interface].ipv4 is not defined
+          - ansible_facts.hostname == inventory_hostname
+    - name: Verify explicit selected disk IDs
+      ansible.builtin.assert:
+        that:
+          - item is match('^/dev/disk/by-id/[^/]+$')
+          - "'REPLACE' not in item"
+          - item is not search('-part[0-9]+$')
+      loop: "{{ foundation_node_inputs[inventory_hostname].osd_devices }}"
+      when: inventory_hostname in groups['ceph']
+    - name: Inspect selected disks without writing them
+      ansible.builtin.command:
+        argv: [lsblk, --json, --paths, --output, 'NAME,TYPE,FSTYPE,MOUNTPOINTS', '{{ item }}']
+      changed_when: false
+      register: foundation_disk_inspection
+      loop: "{{ foundation_node_inputs[inventory_hostname].osd_devices }}"
+      when: inventory_hostname in groups['ceph']
+    - name: Refuse partitions, filesystems, mounted disks and all disks with children
+      ansible.builtin.assert:
+        that:
+          - (item.stdout | from_json).blockdevices | length == 1
+          - (item.stdout | from_json).blockdevices[0].type == 'disk'
+          - not ((item.stdout | from_json).blockdevices[0].fstype | default(''))
+          - (item.stdout | from_json).blockdevices[0].children | default([]) | length == 0
+          - (item.stdout | from_json).blockdevices[0].mountpoints | reject('equalto', none) | list | length == 0
+      loop: "{{ foundation_disk_inspection.results | default([]) }}"
+      when: inventory_hostname in groups['ceph']

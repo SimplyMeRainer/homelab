@@ -1,0 +1,10 @@
+groups:
+  - name: management
+    rules:
+      - alert: ManagementScrapeDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Management scrape {{ $labels.job }} is down'

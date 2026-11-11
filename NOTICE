@@ -1,0 +1,13 @@
+Homelab development kit
+Copyright 2026 SimplyMeRainer
+
+The native Kolla inventory hierarchy in foundation/templates/inventory.ini.j2
+is derived from OpenStack Kolla-Ansible 22.2.0, licensed under Apache License 2.0.
+Upstream source: https://opendev.org/openstack/kolla-ansible
+Upstream contributors retain their copyrights.
+
+Upstream tools, charts, container images and downloaded source archives retain
+their own licenses. This repository does not relicense them. In particular, the
+MinIO source fetched by services/minio/Dockerfile is AGPL-3.0 software; consult
+its upstream license and source-distribution obligations when redistributing
+or operating your resulting build. The MinIO source is not vendored here.

@@ -1,0 +1,34 @@
+# Copy privately and replace node address / VIP / node name from Terraform outputs.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 198.51.100.11
+  bindPort: 6443
+nodeRegistration:
+  name: lab-02-cp-01
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: 198.51.100.11
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+clusterName: lab-02
+kubernetesVersion: v1.35.10
+controlPlaneEndpoint: REPLACE_API_VIP:6443
+apiServer:
+  certSANs:
+    - REPLACE_API_VIP
+    - REPLACE_API_FLOATING_IP
+networking:
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/12
+  dnsDomain: cluster.local
+controllerManager:
+  extraArgs:
+    - name: allocate-node-cidrs
+      value: "true"
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd

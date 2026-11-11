@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Isolated Ubuntu 24.04 Linux builder ONLY. Never a cloud/hypervisor host.
+set -euo pipefail
+umask 077
+[[ "${ALLOW_AMPHORA_BUILD:-}" == reviewed ]] || { echo 'Explicit builder approval required' >&2; exit 2; }
+: "${BUILD_ROOT:?Absolute private empty builder workspace required}"
+[[ "$BUILD_ROOT" == /* && ! -e "$BUILD_ROOT" ]] || exit 2
+mkdir -m 700 "$BUILD_ROOT"
+cd "$BUILD_ROOT"
+curl --fail --location --proto '=https' --tlsv1.2 '{{ foundation_octavia_source_url }}' -o octavia.tar.gz
+printf '%s  %s
+' '{{ foundation_octavia_source_sha256 }}' octavia.tar.gz | sha256sum -c -
+curl --fail --location --proto '=https' --tlsv1.2 '{{ foundation_constraints_url }}' -o upper-constraints.txt
+printf '%s  %s
+' '{{ foundation_constraints_sha256 }}' upper-constraints.txt | sha256sum -c -
+tar -xzf octavia.tar.gz
+python3 -m venv venv
+venv/bin/pip install -c upper-constraints.txt 'diskimage-builder=={{ foundation_dib_version }}'
+export PATH="$BUILD_ROOT/venv/bin:$PATH"
+export DIB_REPOLOCATION_amphora_agent=https://opendev.org/openstack/octavia
+export DIB_REPOREF_amphora_agent={{ foundation_octavia_commit }}
+export DIB_REPOLOCATION_upper_constraints='{{ foundation_constraints_url }}'
+export DIB_REPOREF_upper_constraints={{ foundation_constraints_commit }}
+# Outer workspace/logs private; native DIB root hooks need normal umask.
+(umask 022; bash octavia-{{ foundation_octavia_commit }}/diskimage-create/diskimage-create.sh -a amd64 -b haproxy -i ubuntu-minimal -d noble -e -f -s 4 -t qcow2 -o "$BUILD_ROOT/amphora.qcow2")
+# Remove build-time SSH host keys, not cloud-init regeneration or other guest data.
+virt-sysprep -a amphora.qcow2 --operations ssh-hostkeys
+qemu-img check amphora.qcow2
+qemu-img info --output=json amphora.qcow2 > amphora.info.json
+sha512sum amphora.qcow2 > amphora.qcow2.sha512
+chmod 600 amphora.qcow2 amphora.info.json amphora.qcow2.sha512

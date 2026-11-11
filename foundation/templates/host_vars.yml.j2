@@ -1,0 +1,6 @@
+# Generated non-secret inventory variables, fed with -e @host-inputs.yml
+foundation_node_inputs:
+{% for host in foundation_hosts %}
+  {{ host.name }}:
+    osd_devices: {{ host.osd_devices | to_json }}
+{% endfor %}

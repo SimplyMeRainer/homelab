@@ -1,0 +1,14 @@
+---
+# v1.35 ControlPlaneKubeletLocalMode is GA/locked on: CP kubelets use their
+# private local endpoint; workers use the shared controlPlaneEndpoint.
+- name: Refuse an existing node from a mismatched cluster
+  ansible.builtin.assert:
+    that:
+      - local_cluster['certificate-authority-data'] == authoritative_cluster['certificate-authority-data']
+      - local_cluster.server == expected_kubelet_server
+    fail_msg: Existing kubelet CA/endpoint differs from lab-01; refusing adoption.
+  vars:
+    local_cluster: '{{ (local_kubelet_identity.content | b64decode | from_yaml).clusters[0].cluster }}'
+    authoritative_cluster: '{{ (authoritative_identity.content | b64decode | from_yaml).clusters[0].cluster }}'
+    expected_kubelet_server: "{{ 'https://' + node_ip + ':6443' if join_control_plane | bool else 'https://' + api_endpoint }}"
+  no_log: true

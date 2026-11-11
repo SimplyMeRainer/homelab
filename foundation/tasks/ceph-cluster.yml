@@ -1,0 +1,84 @@
+---
+- name: Bootstrap native Ceph (native cryptographic cluster UUID generation)
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/cephadm
+      - --image
+      - '{{ foundation_ceph_image }}'
+      - bootstrap
+      - --config
+      - /etc/ceph/bootstrap.conf
+      - --mon-ip
+      - '{{ ansible_host }}'
+      - --cluster-network
+      - '{{ foundation_ceph_cluster_network }}'
+      - --ssh-user
+      - '{{ foundation_ssh_user }}'
+
+      - --skip-dashboard
+      - --skip-monitoring-stack
+    creates: /etc/ceph/ceph.conf
+  no_log: true
+- name: Read native cephadm-generated public key only
+  ansible.builtin.slurp: {src: /etc/ceph/ceph.pub}
+  register: foundation_ceph_public_key
+- name: Ensure SSH directory for native enrollment
+  ansible.builtin.file:
+    path: '/home/{{ foundation_ssh_user }}/.ssh'
+    state: directory
+    mode: '0700'
+    owner: '{{ foundation_ssh_user }}'
+  delegate_to: '{{ item }}'
+  loop: "{{ groups['ceph'] }}"
+- name: Authorize native Ceph public key (no private SSH key leaves Ceph)
+  ansible.builtin.lineinfile:
+    path: '/home/{{ foundation_ssh_user }}/.ssh/authorized_keys'
+    line: '{{ foundation_ceph_public_key.content | b64decode | trim }}'
+    create: true
+    mode: '0600'
+    owner: '{{ foundation_ssh_user }}'
+  delegate_to: '{{ item }}'
+  loop: "{{ groups['ceph'] }}"
+- name: Read enrolled native host inventory
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, orch, host, ls, --format, json]
+  changed_when: false
+  register: foundation_enrolled_hosts
+- name: Enroll explicitly listed Ceph hosts
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, orch, host, add, '{{ item }}', '{{ hostvars[item].ansible_host }}']
+  loop: "{{ groups['ceph'] }}"
+  when: item not in (foundation_enrolled_hosts.stdout | from_json | map(attribute='hostname') | list)
+- name: Place three monitors on explicit control hosts
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, orch, apply, mon, '--placement={{ groups["control"] | join(" ") }}']
+- name: Place two managers on explicit control hosts
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, orch, apply, mgr, '--placement=2 {{ groups["control"] | join(" ") }}']
+- name: Explicit approval required for OSD creation
+  ansible.builtin.assert:
+    that: [foundation_allow_osd_prepare | default(false) | bool]
+    fail_msg: OSD creation writes to selected EMPTY disks; set foundation_allow_osd_prepare only after read-only inspection.
+- name: Prepare only operator-selected devices (Ceph refuses in-use disks)
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, orch, daemon, add, osd, '{{ item.0.key }}:{{ item.1 }}']
+  loop: "{{ foundation_node_inputs | dict2items | subelements('value.osd_devices') }}"
+- name: Wait for native Ceph health before producing client credentials
+  ansible.builtin.command:
+    argv: [cephadm, shell, --, ceph, health, --format, json]
+  register: foundation_health
+  changed_when: false
+  until: (foundation_health.stdout | from_json).status == 'HEALTH_OK'
+  retries: 60
+  delay: 10
+- name: Read fresh native FSID
+  ansible.builtin.command: {argv: [cephadm, shell, --, ceph, fsid]}
+  register: foundation_fsid
+  changed_when: false
+- name: Save non-secret generated cluster identity privately
+  ansible.builtin.copy:
+    content: '{{ foundation_fsid.stdout | trim }}'
+    dest: '{{ foundation_runtime }}/ceph/fsid'
+    mode: '0600'
+  delegate_to: localhost
+  become: false

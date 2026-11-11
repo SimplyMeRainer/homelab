@@ -1,0 +1,75 @@
+---
+- name: Gate storage credential production before remote access
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require approved external Ceph credential creation
+      ansible.builtin.assert:
+        that:
+          - foundation_inputs_reviewed | default(false) | bool
+          - foundation_allow_ceph_clients | default(false) | bool
+- name: Create external Ceph pools and least-privileged service clients
+  hosts: ceph[0]
+  become: true
+  gather_facts: false
+  vars:
+    foundation_ceph_pools: [images, volumes, backups, vms]
+    foundation_ceph_clients:
+      - name: glance
+        mon: profile rbd
+        osd: profile rbd pool=images
+        mgr: profile rbd pool=images
+      - name: cinder
+        mon: profile rbd
+        osd: profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images
+        mgr: profile rbd pool=volumes, profile rbd pool=vms
+      - name: cinder-backup
+        mon: profile rbd
+        osd: profile rbd pool=backups
+        mgr: profile rbd pool=backups
+    foundation_ceph_handoffs:
+      - {client: glance, target: glance}
+      - {client: cinder, target: cinder/cinder-volume}
+      - {client: cinder, target: cinder/cinder-backup}
+      - {client: cinder-backup, target: cinder/cinder-backup}
+      - {client: cinder, target: nova}
+  tasks:
+    - name: Require healthy storage
+      ansible.builtin.command: {argv: [cephadm, shell, --, ceph, health, --format, json]}
+      register: foundation_health
+      changed_when: false
+      failed_when: (foundation_health.stdout | from_json).status != 'HEALTH_OK'
+    - name: Read existing pools
+      ansible.builtin.command: {argv: [cephadm, shell, --, ceph, osd, pool, ls, --format, json]}
+      register: foundation_pools
+      changed_when: false
+    - name: Create only named replicated pools
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, ceph, osd, pool, create, '{{ item }}']
+      loop: '{{ foundation_ceph_pools }}'
+      when: item not in (foundation_pools.stdout | from_json)
+    - name: Set pool replication size three
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, ceph, osd, pool, set, '{{ item }}', size, '3']
+      loop: '{{ foundation_ceph_pools }}'
+    - name: Enable RBD application on each named pool
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, ceph, osd, pool, application, enable, '{{ item }}', rbd]
+      loop: '{{ foundation_ceph_pools }}'
+    - name: Initialize RBD metadata natively
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, rbd, pool, init, '{{ item }}']
+      loop: '{{ foundation_ceph_pools }}'
+    - name: Generate service keys with bounded pool capabilities
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, ceph, auth, get-or-create, 'client.{{ item.name }}', mon, '{{ item.mon }}', osd, '{{ item.osd }}', mgr, '{{ item.mgr }}']
+      loop: '{{ foundation_ceph_clients }}'
+      register: foundation_service_keyrings
+      no_log: true
+    - name: Export fresh minimal Ceph configuration
+      ansible.builtin.command:
+        argv: [cephadm, shell, --, ceph, config, generate-minimal-conf]
+      register: foundation_minimal_conf
+      changed_when: false
+    - ansible.builtin.import_tasks: tasks/ceph-handoff.yml

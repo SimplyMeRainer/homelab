@@ -2,6 +2,8 @@
 
 In lab-01, I backed up a small Kubernetes workload with persistent file data, restored it, and checked the restored file against its original SHA-256 digest. This exercise was not a lab-02 restore test.
 
+This exercise predates the development kit in this repository. It is not evidence that this exact source was deployed from empty hardware.
+
 The workload used a PVC backed by Cinder and Ceph. Velero saved the Kubernetes objects, Kopia backed up the file data, and MinIO on the NAS held the backup.
 
 ## What I checked

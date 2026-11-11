@@ -1,0 +1,37 @@
+[
+  {
+    "name": "cilium",
+    "version": "1.19.10",
+    "appVersion": "1.19.10",
+    "url": "https://helm.cilium.io/cilium-1.19.10.tgz",
+    "sha256": "b7252afca3413a33e2b987c954e52441e96979e411e1495ecc6aefe8cd258863"
+  },
+  {
+    "name": "openstack-cinder-csi",
+    "version": "2.35.0",
+    "appVersion": "v1.35.0",
+    "url": "https://github.com/kubernetes/cloud-provider-openstack/releases/download/openstack-cinder-csi-2.35.0/openstack-cinder-csi-2.35.0.tgz",
+    "sha256": "f32351c3efabec9bf1d99024b2f4e03b44d830725d22ef5604afbe36c0746a0c"
+  },
+  {
+    "name": "velero",
+    "version": "12.2.4",
+    "appVersion": "1.18.2",
+    "url": "https://github.com/vmware-tanzu/helm-charts/releases/download/velero-12.2.4/velero-12.2.4.tgz",
+    "sha256": "7b2d6405e3552086983645c7994220f1e47b410e9bf46041adf92a7289700e7e"
+  },
+  {
+    "name": "traefik",
+    "version": "42.3.2",
+    "appVersion": "v3.7.17",
+    "url": "https://traefik.github.io/charts/traefik/traefik-42.3.2.tgz",
+    "sha256": "d9994bb80d5b486c3e8904a5f572b5e0b18e53acadfc987dbc68d019b026c33a"
+  },
+  {
+    "name": "rancher",
+    "version": "2.15.3",
+    "appVersion": "v2.15.3",
+    "url": "https://releases.rancher.com/server-charts/stable/rancher-2.15.3.tgz",
+    "sha256": "343888c66421a9f5666b562cdfeca751d63da994edbe7b1b36752f8ffcf5ecd4"
+  }
+]

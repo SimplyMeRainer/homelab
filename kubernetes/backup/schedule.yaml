@@ -1,0 +1,12 @@
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: workload-daily
+  namespace: velero
+spec:
+  schedule: "0 2 * * *"
+  template:
+    includedNamespaces: [workload]
+    defaultVolumesToFsBackup: true
+    snapshotVolumes: false
+    ttl: 168h0m0s

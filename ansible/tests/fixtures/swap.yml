@@ -1,0 +1,19 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Exercise real swap persistence on a disposable fstab
+      ansible.builtin.include_tasks: ../../roles/baseline/tasks/swap-persist.yml
+      vars:
+        swap_fstab_path: '{{ fixture_fstab }}'
+    - name: First application changed the fixture
+      ansible.builtin.assert:
+        that: swap_persistence.changed
+    - name: Repeat persistence
+      ansible.builtin.include_tasks: ../../roles/baseline/tasks/swap-persist.yml
+      vars:
+        swap_fstab_path: '{{ fixture_fstab }}'
+    - name: Repeat is idempotent
+      ansible.builtin.assert:
+        that: not swap_persistence.changed

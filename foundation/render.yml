@@ -1,0 +1,47 @@
+---
+- name: Render secret-free foundation configuration locally
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [versions.yml]
+  tasks:
+    - name: Validate topology inputs
+      ansible.builtin.assert:
+        that:
+          - foundation_hosts | length >= 3
+          - foundation_hosts | map(attribute='name') | unique | length == foundation_hosts | length
+          - foundation_hosts | map(attribute='address') | unique | length == foundation_hosts | length
+          - foundation_runtime is match('^/')
+          - foundation_external_interface != foundation_network_interface
+          - foundation_provider_vlan | int > 0
+          - foundation_provider_vlan | int < 4095
+    - name: Validate host identifiers and explicitly selected disks
+      ansible.builtin.assert:
+        that:
+          - item.name is match('^[a-z][a-z0-9-]*$')
+          - item.address is match('^[0-9.]+$')
+          - item.osd_devices | unique | length == item.osd_devices | length
+          - item.osd_devices | select('match', '^/dev/disk/by-id/[^/]+$') | list | length == item.osd_devices | length
+      loop: "{{ foundation_hosts }}"
+    - name: Create protected output directories
+      ansible.builtin.file:
+        path: "{{ foundation_runtime }}/{{ item }}"
+        state: directory
+        mode: '0700'
+      loop: ['', kolla, kolla/config, kolla/config/neutron, kolla/certificates, ceph]
+    - name: Render native consumers
+      ansible.builtin.template:
+        src: "templates/{{ item.src }}"
+        dest: "{{ foundation_runtime }}/{{ item.dest }}"
+        mode: '0600'
+      loop:
+        - {src: inventory.ini.j2, dest: inventory.ini}
+        - {src: globals.yml.j2, dest: kolla/globals.yml}
+        - {src: kolla-commands.sh.j2, dest: kolla-commands.sh}
+        - {src: host_vars.yml.j2, dest: host-inputs.yml}
+        - {src: ml2_conf.ini.j2, dest: kolla/config/neutron/ml2_conf.ini}
+        - {src: amphora-build.sh.j2, dest: amphora-build.sh}
+        - {src: amphora-register.sh.j2, dest: amphora-register.sh}
+        - {src: octavia-certificates.py.j2, dest: octavia-certificates.py}
+        - {src: octavia-register.yml.j2, dest: octavia-register.yml}
+        - {src: provider-assets.sh.j2, dest: provider-assets.sh}

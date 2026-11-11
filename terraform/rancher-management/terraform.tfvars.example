@@ -1,0 +1,8 @@
+# Documentation-only addresses: edit before apply. No credentials or private keys here.
+external_network_name = "public"
+image_name = "kit-ubuntu-24.04"
+control_plane_flavor_name = "kit-management"
+worker_flavor_name = "kit-worker"
+ssh_public_key = "ssh-ed25519 REPLACE_WITH_YOUR_EXISTING_PUBLIC_KEY"
+admin_cidrs = ["192.0.2.128/25"]
+tenant_cidr = "192.0.2.0/24"
