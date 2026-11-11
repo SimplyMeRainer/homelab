@@ -1,0 +1,21 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: {{ api_endpoint | to_json }}
+    token: {{ join_token_result.stdout | to_json }}
+    caCertHashes:
+      - {{ join_ca_hash_result.stdout | to_json }}
+nodeRegistration:
+  name: {{ inventory_hostname | to_json }}
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: {{ node_ip | to_json }}
+{% if join_control_plane | bool %}
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: {{ node_ip | to_json }}
+    bindPort: 6443
+  certificateKey: {{ join_key_result.stdout_lines[-1] | to_json }}
+{% endif %}

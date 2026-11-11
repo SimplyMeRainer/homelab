@@ -1,0 +1,32 @@
+---
+- name: Validate baseline inputs without contacting guests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require explicitly reviewed inputs
+      ansible.builtin.assert:
+        that:
+          - groups['control_plane'] | default([]) | length > 0
+          - groups['worker'] | default([]) | length > 0
+          - hostvars[groups['control_plane'][0]].cluster_name in ['lab-01', 'lab-02']
+          - hostvars[groups['control_plane'][0]].lab_inputs_confirmed | default(false) | bool
+        fail_msg: Review private inventory/SSH trust and set lab_inputs_confirmed=true; baseline allows lab-01 or lab-02.
+- name: Read-only admission across ALL baseline targets before mutation
+  hosts: control_plane:worker
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  tasks:
+    - name: Reuse cluster ownership and state admission
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: preflight
+- name: Prepare Ubuntu 24.04 Kubernetes guests (no cluster creation)
+  hosts: control_plane:worker
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files: [vars/releases.yml]
+  roles: [baseline]

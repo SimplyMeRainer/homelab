@@ -1,0 +1,68 @@
+---
+- name: Recheck admitted state immediately before init writes
+  ansible.builtin.import_tasks: state-admission.yml
+- name: Claim fresh first control plane
+  ansible.builtin.import_tasks: claim.yml
+- name: Create static-pod directory
+  ansible.builtin.file:
+    path: /etc/kubernetes/manifests
+    state: directory
+    mode: '0700'
+- name: Render native kubeadm configuration
+  ansible.builtin.template:
+    src: kubeadm.yml.j2
+    dest: /etc/kubernetes/kubeadm-init.yml
+    mode: '0600'
+- name: Bootstrap credentials, VIP and first API exactly once
+  when: not init_complete.stat.exists
+  block:
+    - name: Run kubeadm init preflight before writing certificates
+      ansible.builtin.command: kubeadm init phase preflight --config=/etc/kubernetes/kubeadm-init.yml
+      changed_when: false
+    - name: Create kubeadm certificates
+      ansible.builtin.command: kubeadm init phase certs all --config=/etc/kubernetes/kubeadm-init.yml
+      changed_when: true
+      no_log: true
+    - name: Create bootstrap kubeconfigs including super-admin.conf
+      ansible.builtin.command: kubeadm init phase kubeconfig all --config=/etc/kubernetes/kubeadm-init.yml
+      changed_when: true
+      no_log: true
+    - name: Use temporary super-admin credentials for kube-vip bootstrap (Kubernetes >=1.29)
+      ansible.builtin.include_tasks: vip-config.yml
+      vars:
+        vip_credentials_file: super-admin.conf
+    - name: Complete native kubeadm init using pre-created certificates and kubeconfigs
+      ansible.builtin.command: kubeadm init --config=/etc/kubernetes/kubeadm-init.yml --skip-phases=preflight,certs,kubeconfig
+      changed_when: true
+      no_log: true
+    - name: Record successful kubeadm init resume boundary
+      ansible.builtin.copy:
+        content: |
+          kubeadm init completed; never edit to hide a failed init.
+        dest: /etc/kubernetes/lab-kit-init-complete
+        mode: '0600'
+- name: Wait for API before replacing bootstrap credentials
+  ansible.builtin.import_tasks: api-ready.yml
+- name: Switch kube-vip to regular admin.conf credentials (also repairs interrupted switch)
+  ansible.builtin.include_tasks: vip-config.yml
+  vars:
+    vip_credentials_file: admin.conf
+- name: Verify shared VIP endpoint after the credential transition
+  ansible.builtin.include_tasks: api-ready.yml
+  vars:
+    api_readiness_host: "{{ api_endpoint.split(':')[0] }}"
+- name: Verify cluster identity from the actual authenticated API
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', -n, kube-system, get, configmap, kubeadm-config, -o, json]
+  register: live_cluster_config
+  changed_when: false
+- name: Compare kubeadm live identity and networks
+  ansible.builtin.assert:
+    that:
+      - live_config.clusterName == cluster_name
+      - live_config.controlPlaneEndpoint == api_endpoint
+      - live_config.networking.podSubnet == pod_cidr
+      - live_config.networking.serviceSubnet == service_cidr
+    fail_msg: Authenticated API identity differs from requested lab; refusing joins.
+  vars:
+    live_config: '{{ (live_cluster_config.stdout | from_json).data.ClusterConfiguration | from_yaml }}'

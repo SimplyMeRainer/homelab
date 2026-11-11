@@ -1,0 +1,48 @@
+---
+# Shared by all-host admission and the serial init/join just-in-time rechecks.
+- name: Inspect completed init boundary
+  ansible.builtin.stat:
+    path: /etc/kubernetes/lab-kit-init-complete
+  register: init_complete
+  when: inventory_hostname == groups['control_plane'][0]
+- name: Refuse ambiguous partial init rather than reset or re-init
+  ansible.builtin.assert:
+    that: init_complete.stat.exists or (cluster_state.results | selectattr('stat.exists') | list | length == 0)
+    fail_msg: Partial init detected. See README recovery boundary; never delete cluster state just to rerun.
+  when: inventory_hostname == groups['control_plane'][0]
+- name: Inspect completed kubeadm join
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: joined_node
+- name: Refuse partial join before retrying kubeadm
+  ansible.builtin.assert:
+    that: joined_node.stat.exists or (cluster_state.results | selectattr('stat.exists') | list | length == 0)
+    fail_msg: Partial join detected; resolve with audited manual recovery, never automatic reset.
+  when: inventory_hostname != groups['control_plane'][0]
+- name: Compare existing node CA and endpoint against the first control plane
+  when: joined_node.stat.exists
+  block:
+    - name: Read kubelet identity
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/kubelet.conf
+      register: local_kubelet_identity
+      no_log: true
+    - name: Inspect authoritative admin identity without requiring it on a fresh lab
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: authoritative_admin
+    - name: Require authoritative identity for an existing kubelet
+      ansible.builtin.assert:
+        that: authoritative_admin.stat.exists
+        fail_msg: Existing kubelet without first-control-plane admin.conf; recover manually before any mutation.
+    - name: Read authoritative admin identity
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/admin.conf
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: authoritative_identity
+      no_log: true
+    - name: Validate existing kubelet identity including GA local-API control-plane mode
+      ansible.builtin.import_tasks: node-identity-check.yml
+      vars:
+        join_control_plane: "{{ inventory_hostname in groups['control_plane'] }}"

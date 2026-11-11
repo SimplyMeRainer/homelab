@@ -1,0 +1,130 @@
+---
+- name: Require Ubuntu 24.04 and explicit private node IP
+  ansible.builtin.assert:
+    that:
+      - lab_inputs_confirmed | default(false) | bool
+      - cluster_name in ['lab-01', 'lab-02']
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == '24.04'
+      - node_ip is defined
+      - inventory_hostname is match('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+    fail_msg: Ubuntu 24.04, a DNS-label inventory hostname and explicit private node_ip are required.
+- name: Persistently disable fstab swap with a backup
+  ansible.builtin.import_tasks: swap-persist.yml
+  vars:
+    swap_fstab_path: /etc/fstab
+- name: Reload systemd after fstab changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: swap_persistence.changed
+- name: Inspect active swap
+  ansible.builtin.command: cat /proc/swaps
+  register: active_swap
+  changed_when: false
+- name: Disable currently active swap (never format or remove swap files)
+  ansible.builtin.command: swapoff -a
+  when: active_swap.stdout_lines | length > 1
+  changed_when: true
+- name: Confirm swap is disabled
+  ansible.builtin.command: cat /proc/swaps
+  register: swap_after
+  changed_when: false
+  failed_when: swap_after.stdout_lines | length > 1
+- name: Install Ubuntu runtime and host prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, gpg, apt-transport-https, python3-debian, containerd, conntrack, socat, iproute2, ethtool, ebtables]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+- name: Require supported distro containerd 1.7 (do not silently accept a different config schema)
+  ansible.builtin.command: containerd --version
+  register: containerd_version
+  changed_when: false
+  failed_when: "' 1.7.' not in containerd_version.stdout"
+- name: Persist kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/kubernetes.conf
+    mode: '0644'
+    content: |-
+      overlay
+      br_netfilter
+- name: Load required kernel modules
+  ansible.builtin.command:
+    argv: [modprobe, '{{ item }}']
+  loop: [overlay, br_netfilter]
+  changed_when: false
+- name: Persist Kubernetes forwarding settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-kubernetes.conf
+    mode: '0644'
+    content: |
+      net.bridge.bridge-nf-call-iptables = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward = 1
+  register: kernel_settings
+- name: Apply forwarding settings
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-kubernetes.conf
+  changed_when: false
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: '0755'
+- name: Configure enabled CRI v1 and systemd cgroups
+  ansible.builtin.template:
+    src: containerd.toml.j2
+    dest: /etc/containerd/config.toml
+    mode: '0644'
+    backup: true
+  notify: Restart containerd
+- name: Enable runtime
+  ansible.builtin.systemd_service:
+    name: containerd
+    enabled: true
+    state: started
+- name: Apply runtime configuration before CRI checks
+  ansible.builtin.meta: flush_handlers
+- name: Verify the runtime CRI plugin loaded successfully
+  ansible.builtin.command: ctr plugins ls
+  register: runtime_plugins
+  changed_when: false
+  failed_when: runtime_plugins.stdout is not search('io.containerd.grpc.v1\s+cri\s+[^\n]+\s+ok')
+- name: Create apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+- name: Retrieve checksum-verified official Kubernetes ASCII signing key
+  ansible.builtin.get_url:
+    url: 'https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_minor }}/deb/Release.key'
+    dest: /etc/apt/keyrings/kubernetes.asc
+    checksum: 'sha256:{{ kubernetes_key_sha256 }}'
+    mode: '0644'
+- name: Configure only the selected Kubernetes minor repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    types: [deb]
+    uris: 'https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_minor }}/deb/'
+    suites: ['/']
+    signed_by: /etc/apt/keyrings/kubernetes.asc
+    state: present
+- name: Install exact upstream package versions (no automatic held-package upgrade)
+  ansible.builtin.apt:
+    name:
+      - 'kubelet={{ kubernetes_package_version }}'
+      - 'kubeadm={{ kubernetes_package_version }}'
+      - 'kubectl={{ kubernetes_package_version }}'
+    state: present
+    update_cache: true
+- name: Hold Kubernetes packages against incidental apt upgrades
+  ansible.builtin.dpkg_selections:
+    name: '{{ item }}'
+    selection: hold
+  loop: [kubelet, kubeadm, kubectl]
+- name: Enable kubelet (waits for kubeadm config on a fresh host)
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true
+- name: Verify CRI v1 readiness using the installed kubeadm dependency crictl
+  ansible.builtin.command: crictl --runtime-endpoint unix:///run/containerd/containerd.sock info
+  changed_when: false

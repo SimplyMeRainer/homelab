@@ -1,0 +1,79 @@
+{
+  "golang": {
+    "image": "golang:1.24.7-alpine3.22@sha256:fc2cff6625f3c1c92e6c85938ac5bd09034ad0d4bc2dfb08278020b68540dbb5",
+    "digest": "sha256:fc2cff6625f3c1c92e6c85938ac5bd09034ad0d4bc2dfb08278020b68540dbb5",
+    "source": "https://registry-1.docker.io/v2/library/golang/manifests/1.24.7-alpine3.22",
+    "retrieved_utc": "2026-11-11T16:47:20.546054+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  },
+  "alpine": {
+    "image": "alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1",
+    "digest": "sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1",
+    "source": "https://registry-1.docker.io/v2/library/alpine/manifests/3.22.1",
+    "retrieved_utc": "2026-11-11T16:47:20.546309+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  },
+  "forgejo": {
+    "image": "codeberg.org/forgejo/forgejo:11.0.3-rootless@sha256:691657c7e64af7730a2e885e6d022cf16ae60724931c5392bd61838afadcaeba",
+    "digest": "sha256:691657c7e64af7730a2e885e6d022cf16ae60724931c5392bd61838afadcaeba",
+    "source": "https://codeberg.org/v2/forgejo/forgejo/manifests/11.0.3-rootless",
+    "retrieved_utc": "2026-11-11T16:47:21.803111+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  },
+  "minio": {
+    "status": "source-build-fallback-public-upstream-image-unavailable",
+    "source": "https://codeload.github.com/minio/minio/tar.gz/refs/tags/RELEASE.2025-09-07T16-13-09Z",
+    "source_sha256": "c9598dcce3440977e79f787f2ba0e7e4d92c8d556bd51e7cef3785bafd6635f3",
+    "image_digest": null,
+    "note": "Docker Hub and Quay anonymous pull returned HTTP 401. No fabricated public digest; source build not executed without daemon."
+  },
+  "vault": {
+    "image": "hashicorp/vault:1.20.4@sha256:268bb80aa9c6d13d65fcfa05c0c268caca068952240a8087291a6ce0b66e3a10",
+    "digest": "sha256:268bb80aa9c6d13d65fcfa05c0c268caca068952240a8087291a6ce0b66e3a10",
+    "source": "https://registry-1.docker.io/v2/hashicorp/vault/manifests/1.20.4",
+    "retrieved_utc": "2026-11-11T16:47:20.548522+00:00",
+    "media_type": "application/vnd.docker.distribution.manifest.list.v2+json"
+  },
+  "keycloak": {
+    "image": "quay.io/keycloak/keycloak:26.4.1@sha256:bbb299c7e58a2c61c683dc3439da3e2698e005ca88ba6fd249629311d70250ab",
+    "digest": "sha256:bbb299c7e58a2c61c683dc3439da3e2698e005ca88ba6fd249629311d70250ab",
+    "source": "https://quay.io/v2/keycloak/keycloak/manifests/26.4.1",
+    "retrieved_utc": "2026-11-11T16:47:20.427894+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  },
+  "postgres": {
+    "image": "postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929",
+    "digest": "sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929",
+    "source": "https://registry-1.docker.io/v2/library/postgres/manifests/17.6",
+    "retrieved_utc": "2026-11-11T16:47:20.536695+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  },
+  "prometheus": {
+    "image": "prom/prometheus:v3.6.0@sha256:76947e7ef22f8a698fc638f706685909be425dbe09bd7a2cd7aca849f79b5f64",
+    "digest": "sha256:76947e7ef22f8a698fc638f706685909be425dbe09bd7a2cd7aca849f79b5f64",
+    "source": "https://registry-1.docker.io/v2/prom/prometheus/manifests/v3.6.0",
+    "retrieved_utc": "2026-11-11T16:47:20.545084+00:00",
+    "media_type": "application/vnd.docker.distribution.manifest.list.v2+json"
+  },
+  "grafana": {
+    "image": "grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7",
+    "digest": "sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7",
+    "source": "https://registry-1.docker.io/v2/grafana/grafana/manifests/12.2.0",
+    "retrieved_utc": "2026-11-11T16:47:20.541820+00:00",
+    "media_type": "application/vnd.docker.distribution.manifest.list.v2+json"
+  },
+  "alertmanager": {
+    "image": "prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba",
+    "digest": "sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba",
+    "source": "https://registry-1.docker.io/v2/prom/alertmanager/manifests/v0.28.1",
+    "retrieved_utc": "2026-11-11T16:47:20.746931+00:00",
+    "media_type": "application/vnd.docker.distribution.manifest.list.v2+json"
+  },
+  "n8n": {
+    "image": "n8nio/n8n:1.113.3@sha256:57f95a26b1b28527053fba6316d9d046395d9b4da9d0da486e838384a38fcf37",
+    "digest": "sha256:57f95a26b1b28527053fba6316d9d046395d9b4da9d0da486e838384a38fcf37",
+    "source": "https://registry-1.docker.io/v2/n8nio/n8n/manifests/1.113.3",
+    "retrieved_utc": "2026-11-11T16:47:20.862691+00:00",
+    "media_type": "application/vnd.oci.image.index.v1+json"
+  }
+}

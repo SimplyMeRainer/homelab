@@ -1,0 +1,18 @@
+deployment:
+  replicas: 3
+service:
+  spec:
+    type: NodePort
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443
+nodeSelector:
+  node-role.kubernetes.io/worker: ""
+providers:
+  kubernetesIngress:
+    publishedService:
+      enabled: false
+log:
+  level: INFO

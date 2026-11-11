@@ -1,0 +1,70 @@
+---
+- name: Recheck admitted state immediately before join writes
+  ansible.builtin.import_tasks: state-admission.yml
+- name: Claim fresh join target
+  ansible.builtin.import_tasks: claim.yml
+- name: Dynamically enroll with short-lived runtime credentials
+  when: not joined_node.stat.exists
+  no_log: true
+  diff: false
+  block:
+    - name: Issue short-lived CA-pinned join command without printing it
+      ansible.builtin.command: kubeadm token create --ttl=10m --print-join-command
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: issued_join
+      changed_when: true
+    - name: Keep runtime discovery values in memory only
+      ansible.builtin.set_fact:
+        join_token_result: {stdout: '{{ issued_join.stdout.split()[4] }}'}
+        join_ca_hash_result: {stdout: '{{ issued_join.stdout.split()[6] }}'}
+        cacheable: false
+    - name: Generate a new encryption key for this control-plane join only
+      ansible.builtin.command: kubeadm certs certificate-key
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: join_key_result
+      changed_when: false
+      when: join_control_plane | bool
+    - name: Upload certificates encrypted with the fresh key (native kubeadm)
+      ansible.builtin.command:
+        argv: [kubeadm, init, phase, upload-certs, --upload-certs, '--certificate-key={{ join_key_result.stdout_lines[-1] }}']
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      changed_when: true
+      when: join_control_plane | bool
+    - name: Render private native JoinConfiguration
+      ansible.builtin.template:
+        src: join.yml.j2
+        dest: /etc/kubernetes/lab-kit-join.yml
+        mode: '0600'
+    - name: Join the node using verified CA discovery
+      ansible.builtin.command: kubeadm join --config=/etc/kubernetes/lab-kit-join.yml
+      changed_when: true
+  always:
+    - name: Remove token-bearing join configuration even on failure
+      ansible.builtin.file:
+        path: /etc/kubernetes/lab-kit-join.yml
+        state: absent
+    - name: Revoke issued token immediately (TTL remains a failure backstop)
+      ansible.builtin.command:
+        argv: [kubeadm, token, delete, '{{ issued_join.stdout.split()[4].split(".")[0] }}']
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      changed_when: true
+      when: issued_join is defined and issued_join.stdout is defined
+    - name: Remove uploaded certificate secret after the serialized control-plane join
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', -n, kube-system, delete, secret, kubeadm-certs, --ignore-not-found=true]
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      changed_when: true
+      when: join_control_plane | bool
+- name: Configure joined control-plane kube-vip using regular admin credentials
+  ansible.builtin.include_tasks: vip-config.yml
+  vars:
+    vip_credentials_file: admin.conf
+  when: join_control_plane | bool
+- name: Verify joined control plane is API-ready before the next member
+  ansible.builtin.include_tasks: api-ready.yml
+  when: join_control_plane | bool
+- name: Wait for this node Ready before continuing
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', wait, '--for=condition=Ready', 'node/{{ inventory_hostname }}', --timeout=300s]
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  changed_when: false

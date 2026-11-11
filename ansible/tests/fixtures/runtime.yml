@@ -1,0 +1,42 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    expected_identity: {cluster_name: lab-01}
+    ownership_marker: {stat: {exists: true}}
+    cluster_name: lab-01
+    node_ip: 203.0.113.11
+    kubectl_binary: '{{ fixture_kubectl }}'
+  tasks:
+    - name: Matching identity passes
+      ansible.builtin.include_tasks: ../../roles/cluster/tasks/identity-check.yml
+      vars:
+        existing_identity:
+          content: '{{ {"cluster_name": "lab-01"} | to_json | b64encode }}'
+    - name: Mismatched identity must fail
+      block:
+        - name: Exercise actual production refusal
+          ansible.builtin.include_tasks: ../../roles/cluster/tasks/identity-check.yml
+          vars:
+            existing_identity:
+              content: '{{ {"cluster_name": "lab-02"} | to_json | b64encode }}'
+        - name: Fail if mismatch was accepted
+          ansible.builtin.fail:
+            msg: mismatch was accepted
+      rescue:
+        - name: Verify refusal was from the identity guard
+          ansible.builtin.assert:
+            that: "'Mismatched cluster identity' in ansible_failed_result.msg"
+    - name: Validate Kubernetes 1.35 control-plane kubelet local-API identity
+      ansible.builtin.include_tasks: ../../roles/cluster/tasks/node-identity-check.yml
+      vars:
+        node_ip: 203.0.113.11
+        api_endpoint: api.lab.example:6443
+        join_control_plane: true
+        local_kubelet_identity:
+          content: '{{ {"clusters": [{"cluster": {"server": "https://203.0.113.11:6443", "certificate-authority-data": "fixture-ca"}}]} | to_yaml | b64encode }}'
+        authoritative_identity:
+          content: '{{ {"clusters": [{"cluster": {"server": "https://api.lab.example:6443", "certificate-authority-data": "fixture-ca"}}]} | to_yaml | b64encode }}'
+    - name: Execute real readiness command against a controlled local executable
+      ansible.builtin.include_tasks: ../../roles/cluster/tasks/api-ready.yml

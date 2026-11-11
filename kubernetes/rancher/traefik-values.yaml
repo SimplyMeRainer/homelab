@@ -1,0 +1,16 @@
+deployment:
+  kind: DaemonSet
+hostNetwork: false
+service:
+  enabled: false
+ports:
+  web:
+    port: 8000
+  websecure:
+    port: 8443
+    hostPort: 443
+    hostIP: 192.0.2.11
+providers:
+  kubernetesIngress:
+    publishedService:
+      enabled: false

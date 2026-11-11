@@ -1,77 +1,68 @@
-# My homelab
+# Homelab development kit
 
-I use this lab to practice running a small private cloud: building VMs, connecting storage, running two Kubernetes labs, and recovering an application after a rebuild.
+A configurable build kit for my OpenStack and Kubernetes lab. It includes the cloud foundation, both Kubernetes labs, management services, and the tests used to develop the configuration.
 
-It runs on five reused Linux machines and a NAS. I care more about understanding failures and making changes repeatable than collecting tools.
+The physical layout is five Linux machines plus a NAS. Kubernetes runs in tenant VMs; Ceph uses disks on the Linux hosts. Management and backup services stay outside the workload clusters.
 
-This is a simplified public overview, not the operational repository or a full deployment kit. All IPs, hostnames, and domains below are fictional examples. The architecture and recovery exercise describe the actual lab; they are not a live health report.
+Lab addresses, domains and hostnames are fictional examples. Upstream download URLs and software identifiers are real. Replace the lab examples with a reviewed network plan before deployment. Credentials, state, private keys and kubeconfigs stay outside Git.
 
-## How it fits together
+## What it builds
+
+| Layer | Implementation |
+|---|---|
+| Cloud foundation | Native Ansible, cephadm and Kolla-Ansible; external Ceph storage and OpenStack services |
+| Cloud assets | Terraform image checksum verification, Glance image, flavors and Octavia flavor |
+| lab-01 | 3 control planes, 2 workers; automated kubeadm, kube-vip and Cilium setup |
+| lab-02 | 3 control planes, 3 workers; manual Kubernetes build with Octavia API and ingress endpoints |
+| Management cluster | Separate VM and Kubernetes/Rancher installation path |
+| Persistent storage and backup | Cinder CSI, retained volumes, Velero/Kopia and MinIO |
+| Identity and services | FreeIPA, Keycloak, Forgejo, Vault, MinIO, Prometheus, Grafana, Alertmanager and n8n |
 
 ```mermaid
-flowchart TB
-    admin["Admin workstation
-Terraform and Ansible"] --> cloud
-    git["Forgejo
-review and validation"] -->|"approved source, run by operator"| admin
-    subgraph cloud["Five Linux hosts"]
-        os["OpenStack / Kolla-Ansible
-KVM, networking, volumes"]
-        ceph["External Ceph
-local disks on the Linux hosts"]
-        os <--> ceph
-    end
-    os --> lab01["lab-01: repeatable cluster and recovery<br/>3 control planes, 2 workers<br/>kube-vip API endpoint"]
-    os --> lab02["lab-02: manual Kubernetes build<br/>3 control planes, 3 workers<br/>Octavia API and ingress endpoints"]
-    lab01 -->|"PVC / Cinder CSI"| os
-    lab01 -->|"Velero / Kopia backups"| nas["NAS / MinIO<br/>outside both workload clusters"]
-    identity["FreeIPA / Keycloak"] -. "directory and SSO" .-> os
-    monitoring["Prometheus / Grafana / Alertmanager"] -. "metrics and alerts" .-> cloud
+flowchart LR
+    operator["Operator workstation<br/>Terraform and Ansible"] --> cloud["OpenStack / Kolla-Ansible<br/>Five Linux hosts"]
+    cloud <--> ceph["External Ceph<br/>Disks on the Linux hosts"]
+    cloud --> a["lab-01<br/>3 control planes + 2 workers<br/>Automated kubeadm / kube-vip"]
+    cloud --> b["lab-02<br/>3 control planes + 3 workers<br/>Manual kubeadm / Octavia"]
+    cloud --> rancher["Separate management VM<br/>Kubernetes / Rancher"]
+    a -->|"CSI volumes"| cloud
+    a -->|"Workload backups"| management["NAS / management host<br/>MinIO and management services"]
+    identity["Separate identity VM<br/>FreeIPA"] -->|"LDAPS"| management
 ```
 
-The NAS also hosts management services. It is not a Ceph storage node.
+Both workload clusters share the cloud foundation. They are not independent sites, and the NAS is not a Ceph OSD.
 
-## Two Kubernetes labs
+## Start here
 
-Both run as separate VM groups on the same OpenStack and Ceph foundation.
+1. Read the [build order and prerequisites](docs/build.md).
+2. Configure and build the [foundation](foundation/README.md).
+3. Create the [cloud assets and VM cohorts](terraform/README.md).
+4. Use [Ansible for lab-01](ansible/README.md) and the [manual lab-02 procedure](kubernetes/lab-02/README.md).
+5. Deploy [management services](services/README.md), then configure [storage](kubernetes/storage/README.md), [backups](kubernetes/backup/README.md) and [Rancher](kubernetes/rancher/README.md).
 
-| Lab | Kubernetes nodes | Build approach | API access |
-|---|---|---|---|
-| lab-01 | 3 control planes, 2 workers | Terraform and Ansible for repeatable provisioning and recovery practice | kube-vip |
-| lab-02 | 3 control planes, 3 workers | Terraform creates VMs; Kubernetes is configured separately by hand | Octavia active/standby load balancer |
+Each component documents its editable inputs, native commands and protected outputs. Hardware, prepared operating systems, routing, initial DNS/NTP and trusted administrator access are prerequisites; this kit does not reimage existing machines.
 
-lab-02 also has an Octavia ingress design that forwards HTTP/HTTPS to Traefik on the workers. Its Terraform module does not install Kubernetes. The completed restore described here belongs to lab-01, not both labs.
+## Develop and validate
 
-## What I use
+Install Python 3.12+, Terraform 1.16.5, Ansible, Helm, Docker CLI/Compose, OpenSSL and `htpasswd`. The local validation route does not need a Docker daemon or cloud credentials.
 
-| Layer | Tools | Purpose |
-|---|---|---|
-| Private cloud | OpenStack, Kolla-Ansible, KVM | Run VMs and manage networks and volumes |
-| Storage | Ceph RBD, Cinder, Cinder CSI | Give VMs and Kubernetes workloads persistent storage |
-| Provisioning | Terraform, Ansible, kubeadm | Create cloud resources, then configure guests |
-| Kubernetes | kubeadm; Cilium and kube-vip in lab-01 | Practice repeatable and manual cluster builds |
-| Load balancing | Octavia, Traefik | lab-02 API access and application ingress |
-| Backup | Velero, Kopia, MinIO | Restore application objects and file data |
-| Identity | FreeIPA, Keycloak | Central directory and supported application SSO |
-| Operations | Prometheus, Grafana, Alertmanager, Forgejo | Observe the lab and review changes |
+```sh
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+ansible-galaxy collection install -r requirements-galaxy.yml
+make test
+make validate
+```
 
-## Decisions I can explain
+Validation runs component fixtures, native Terraform schemas and provider-mock tests, Ansible syntax checks, Compose parsing, PKI checks and checksum-locked Helm renders. Dependencies may download from public registries. GitHub CI also builds the upstream-source MinIO image and exercises its version command on an ephemeral runner.
 
-- Terraform owns cloud resources. Ansible configures the guests. I keep those jobs separate.
-- Kubernetes control-plane VMs use hard anti-affinity so one hypervisor does not host all of them.
-- A retained volume is not a backup. I use a separate backup path for application recovery.
-- Git validation does not deploy infrastructure. An operator runs the approved source.
-- The NAS-hosted management and backup services sit outside both Kubernetes clusters.
+Make and CI do not deploy the lab. Deployment stays an operator-run action after input and plan review.
 
-This is still one home site with shared power, networking, and a NAS. Multiple controllers do not make it a production disaster-recovery environment. I have completed a small workload restore, not a full clean-room rebuild of every service.
+## Evidence and limits
 
-## Read more
+Offline checks are not a clean-room deployment test. Live boot, networking, HA, SSO and restore acceptance still need a staged environment. My [completed lab-01 recovery exercise](docs/recovery.md) predates this kit and is not proof that this exact source rebuilt every service.
 
-- [Design and example addressing](docs/design.md)
-- [Completed recovery exercise](docs/recovery.md)
-- [Short interview walkthrough](docs/demo.md)
-- [Shared foundation inventory](examples/inventory.ini)
-- [Both Kubernetes lab inventories](examples/kubernetes-inventory.ini)
-- [Example Kubernetes storage class](examples/storageclass.yaml)
+Native cephadm has its own SSH trust model; review the explicit boundary in the foundation guide. Release and chart pins identify dependencies, not vulnerability approval or a complete per-service OpenStack image-digest BOM. Review pinned releases before exposing services.
 
-The examples are reference material. They contain no credentials, real endpoints, state files, or private Git history. They will not deploy the lab on their own.
+See [design decisions](docs/design.md), the [interview walkthrough](docs/demo.md) and [security guidance](SECURITY.md).

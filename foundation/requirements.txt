@@ -1,0 +1,4 @@
+# Public releases; use a dedicated Python 3.12 virtual environment.
+kolla-ansible==22.2.0
+ansible-core==2.20.11
+python-openstackclient==9.0.1

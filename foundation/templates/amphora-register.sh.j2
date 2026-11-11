@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Operator authenticates OSC using protected clouds.yaml/environment, never argv.
+set -euo pipefail
+umask 077
+[[ "${ALLOW_AMPHORA_REGISTER:-}" == reviewed ]] || exit 2
+: "${AMPHORA_IMAGE:?Path to completed verified QCOW2}"
+qemu-img check "$AMPHORA_IMAGE"
+qemu-img info --output=json "$AMPHORA_IMAGE" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["format"] == "qcow2" and d["virtual-size"] <= 5 * 1024**3 and not d.get("backing-filename")'
+# Native registration has already created this dedicated project.
+project=$(openstack project show octavia -f value -c id)
+[[ -n "$project" ]] || exit 2
+# Refuse ambiguity/replacement: updates require a separately reviewed image lifecycle.
+[[ -z "$(openstack image list --name foundation-amphora -f value -c ID)" ]] || exit 2
+image=$(openstack image create foundation-amphora --private --project "$project" --disk-format qcow2 --container-format bare --tag amphora --property hw_architecture=x86_64 --file "$AMPHORA_IMAGE" -f value -c id)
+# Exact remote readback: owner/status/tag and secure content hash.
+openstack image show "$image" -f json > "${AMPHORA_IMAGE}.registered.json"
+python3 - "$AMPHORA_IMAGE" "${AMPHORA_IMAGE}.registered.json" "$project" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+image=Path(sys.argv[1]); d=json.loads(Path(sys.argv[2]).read_text())
+assert d['owner'] == sys.argv[3] and d['status'].lower() == 'active'
+assert 'amphora' in d['tags']
+p=d.get('properties', {})
+if isinstance(p,str):
+    raise SystemExit('OSC must return structured image properties; retain receipt and inspect before retry')
+algorithm=d.get('os_hash_algo') or p.get('os_hash_algo')
+expected=d.get('os_hash_value') or p.get('os_hash_value')
+assert algorithm in ('sha256','sha512') and expected
+with image.open('rb') as stream:
+    assert hashlib.file_digest(stream, algorithm).hexdigest() == expected
+PY

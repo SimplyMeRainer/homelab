@@ -2,41 +2,42 @@
 
 ## 1. Explain the layers
 
-Start with the README diagram: physical Linux hosts, OpenStack and Ceph, then both Kubernetes labs. Compare lab-01's three control planes/two workers and repeatable setup with lab-02's three control planes/three workers and manual Kubernetes build. Explain kube-vip versus Octavia API access, and point out the shared failure domains.
+Start with the README diagram: physical Linux hosts, OpenStack and Ceph, then both Kubernetes labs and the separate management services. Compare lab-01's three control planes/two workers and repeatable setup with lab-02's three control planes/three workers and manual Kubernetes build. Explain kube-vip versus Octavia API access, and the shared failure domains.
 
-## 2. Show current state
+## 2. Show the actual code
 
-These commands use a fictional `lab-demo` cloud profile and separate fictional `lab-01-demo` and `lab-02-demo` Kubernetes contexts. Replace them with your own lab profiles and configure credentials locally. Use explicit targets so the demo does not query a work environment by accident.
+- `foundation/`: physical inventory, explicit storage devices and native platform deployment.
+- `terraform/`: image/flavor producers, VM/network resources and separate cluster state.
+- `ansible/`: guest baseline, serialized kubeadm bootstrap and private inventory/kubeconfig handoff.
+- `kubernetes/`: manual lab-02 build and storage/backup/Rancher install inputs.
+- `services/`: persistent management stack, PKI and identity configuration.
+
+Trace one editable input through its producer and consumer. For example, a Terraform node's private address becomes `node_ip` in Ansible inventory; the floating address is only the SSH access path.
+
+## 3. Show validation without changing the lab
+
+From a prepared development environment:
+
+```sh
+make test
+make validate
+```
+
+Open the actual GitHub Actions result for the revision being discussed. Explain the difference between provider-mock plans, native syntax/schema/configuration checks, image builds and a real deployment. Do not describe a green CI run as proof of cloud health or HA.
+
+## 4. Optionally show current lab state
+
+These read-only commands use fictional cloud/context labels. Replace them and use explicit private kubeconfig files so the demo cannot silently select a work cluster.
 
 ```sh
 openstack --os-cloud lab-demo hypervisor list
 openstack --os-cloud lab-demo server list
 openstack --os-cloud lab-demo volume list
 
-# Compare both clusters explicitly.
-kubectl --context lab-01-demo get nodes -o wide
-kubectl --context lab-02-demo get nodes -o wide
-
-# Follow the tested storage path in lab-01.
-kubectl --context lab-01-demo get pods -A
-kubectl --context lab-01-demo get storageclass
-kubectl --context lab-01-demo get pvc,pv -A
+kubectl --kubeconfig /path/to/lab-01.kubeconfig --context lab-01-admin@lab-01 get nodes -o wide
+kubectl --kubeconfig /path/to/lab-02.kubeconfig --context lab-02-admin@lab-02 get nodes -o wide
 ```
 
-Show health as it is. If something is unavailable, explain the boundary rather than describing it as healthy because an older test passed.
+Show health as it is. For storage, trace a PVC through Cinder CSI to a cloud volume and Ceph. Explain retention versus backup. Describe the [historical lab-01 restore](recovery.md), its data-integrity check and its limits; do not present it as a lab-02 or clean-room kit rebuild result.
 
-## 3. Follow one storage request
-
-In lab-01, trace a pod's PVC through Cinder CSI to an OpenStack volume and the Ceph backend. For lab-02, explain the separate Octavia API and ingress paths. Explain why retention and backup solve different problems without assuming both clusters have identical integrations.
-
-## 4. Discuss the recovery exercise
-
-Describe the [completed lab-01 restore](recovery.md), including the data-integrity check and its limits. Do not present it as a lab-02 recovery result or run a destructive drill during the interview.
-
-## Questions worth discussing
-
-- What fails if a controller host is lost?
-- Which components still share a failure domain?
-- Why split Terraform from guest configuration?
-- How would I verify a restore before calling it successful?
-- What would need to change before using this design for production?
+Do not run an apply, shutdown, cluster deletion or restore during a screen share.

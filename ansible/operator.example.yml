@@ -1,0 +1,10 @@
+---
+# Copy to ignored config/local/lab-01-ansible.yml; edit privately.
+# These are operator/project inputs, NOT Terraform source IDs.
+lab_inputs_confirmed: false
+ansible_user: operator
+ansible_ssh_private_key_file: /path/to/private/operator-identity
+kube_vip_interface: ens3
+# Optional only when not in PATH on the controller:
+# helm_binary: /path/to/helm
+# bootstrap_output_dir: /absolute/private/runtime/ansible/lab-01

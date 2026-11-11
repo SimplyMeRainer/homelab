@@ -1,0 +1,20 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: REPLACE_API_VIP:6443
+    token: REPLACE_WITH_SHORT_LIVED_TOKEN
+    caCertHashes:
+      - sha256:REPLACE_WITH_REAL_CA_PUBLIC_KEY_HASH
+nodeRegistration:
+  name: lab-02-worker-01
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: REPLACE_NODE_PRIVATE_IP
+# Add this block ONLY for cp-02 and cp-03; remove for all workers:
+# controlPlane:
+#   localAPIEndpoint:
+#     advertiseAddress: REPLACE_NODE_PRIVATE_IP
+#     bindPort: 6443
+#   certificateKey: REPLACE_SHORT_LIVED_CERTIFICATE_KEY

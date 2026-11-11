@@ -1,0 +1,2 @@
+# Install only in a controller venv (Python 3.12+), never on the global host.
+ansible-core==2.20.11

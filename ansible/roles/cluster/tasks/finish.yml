@@ -1,0 +1,33 @@
+---
+- name: Wait for all expected nodes to be Ready
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', wait, '--for=condition=Ready', nodes, --all, --timeout=300s]
+  changed_when: false
+- name: Read actual node membership
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', get, nodes, -o, json]
+  register: actual_nodes
+  changed_when: false
+- name: Assert exact expected membership (no silently adopted nodes)
+  ansible.builtin.assert:
+    that: (actual_nodes.stdout | from_json)['items'] | map(attribute='metadata.name') | sort == (groups['control_plane'] + groups['worker']) | sort
+    fail_msg: Actual cluster membership differs from the 3CP/2worker inventory.
+- name: Wait for Cilium, operator and DNS availability
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', -n, kube-system, rollout, status, '{{ item }}', --timeout=300s]
+  loop: [daemonset/cilium, daemonset/cilium-envoy, deployment/cilium-operator, deployment/coredns]
+  changed_when: false
+- name: Read admin kubeconfig privately (never fetch super-admin.conf)
+  ansible.builtin.slurp:
+    src: /etc/kubernetes/admin.conf
+  register: private_admin_config
+  no_log: true
+- name: Write a standalone single-context private kubeconfig on controller
+  ansible.builtin.template:
+    src: admin.kubeconfig.j2
+    dest: '{{ bootstrap_output_dir | default(playbook_dir + "/../runtime/ansible/lab-01") }}/admin.kubeconfig'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  no_log: true
+  diff: false

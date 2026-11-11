@@ -1,0 +1,31 @@
+credentials:
+  useSecret: true
+  existingSecret: velero-cloud-credentials
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.14.0
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+deployNodeAgent: true
+snapshotsEnabled: false
+configuration:
+  uploaderType: kopia
+  defaultVolumesToFsBackup: true
+  backupStorageLocation:
+    - name: nas-minio
+      provider: aws
+      bucket: lab-02-backups
+      default: true
+      caCertRef:
+        name: minio-ca
+        key: ca.crt
+      config:
+        region: us-east-1
+        s3ForcePathStyle: "true"
+        s3Url: https://minio.lab.example:9000
+        insecureSkipTLSVerify: "false"
+        checksumAlgorithm: ""
+  volumeSnapshotLocation: []
+nodeAgent:
+  podVolumePath: /var/lib/kubelet/pods

@@ -1,0 +1,55 @@
+---
+- name: Create controller-private output directory
+  ansible.builtin.file:
+    path: '{{ bootstrap_output_dir | default(playbook_dir + "/../runtime/ansible/lab-01") }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+- name: Download checksum-pinned upstream Cilium chart on controller
+  ansible.builtin.get_url:
+    url: 'https://helm.cilium.io/cilium-{{ cilium_version }}.tgz'
+    dest: '{{ bootstrap_output_dir | default(playbook_dir + "/../runtime/ansible/lab-01") }}/cilium-{{ cilium_version }}.tgz'
+    checksum: 'sha256:{{ cilium_chart_sha256 }}'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+- name: Render pinned Cilium with native controller Helm (retain kube-proxy)
+  ansible.builtin.command:
+    argv:
+      - '{{ helm_binary | default("helm") }}'
+      - template
+      - cilium
+      - '{{ bootstrap_output_dir | default(playbook_dir + "/../runtime/ansible/lab-01") }}/cilium-{{ cilium_version }}.tgz'
+      - --namespace=kube-system
+      - '--kube-version={{ kubernetes_version }}'
+      - --set=kubeProxyReplacement=false
+      - --set=hubble.enabled=false
+      - --set=ipam.mode=kubernetes
+      - '--set=k8sServiceHost={{ api_vip }}'
+      - --set=k8sServicePort=6443
+      - '--set=cluster.name={{ cluster_name }}'
+      - --set=image.useDigest=true
+      - --set=operator.image.useDigest=true
+  delegate_to: localhost
+  become: false
+  register: cilium_render
+  changed_when: false
+- name: Copy rendered Cilium configuration to first control plane
+  ansible.builtin.copy:
+    content: '{{ cilium_render.stdout }}'
+    dest: /etc/kubernetes/cilium.yml
+    mode: '0600'
+- name: Apply Cilium via TLS-authenticated native kubectl
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', apply, --server-side=true, --field-manager=lab-kit, -f, /etc/kubernetes/cilium.yml]
+  register: cilium_apply
+  changed_when: "' created' in cilium_apply.stdout or ' configured' in cilium_apply.stdout"
+- name: Wait for the initial Cilium DaemonSet
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', -n, kube-system, rollout, status, daemonset/cilium, --timeout=300s]
+  changed_when: false
+- name: Wait for first control-plane node networking
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, '--context=kubernetes-admin@{{ cluster_name }}', wait, '--for=condition=Ready', 'node/{{ inventory_hostname }}', --timeout=300s]
+  changed_when: false

@@ -1,0 +1,17 @@
+---
+# Loaded by the native Kolla CLI with its globals/password bundle.
+- name: Register Octavia identity only after base cloud and toolbox are ready
+  hosts: octavia-api
+  gather_facts: false
+  vars:
+    project_name: octavia
+  pre_tasks:
+    - name: Load pinned native global defaults
+      ansible.builtin.include_vars:
+        dir: '{{ '{{' }} foundation_kolla_ansible_dir {{ '}}' }}/group_vars/all'
+  tasks:
+    - name: Native Keystone service project user endpoints and roles
+      ansible.builtin.import_role:
+        name: octavia
+        tasks_from: register
+      no_log: true

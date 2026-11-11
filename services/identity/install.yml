@@ -1,0 +1,24 @@
+---
+- name: Install native FreeIPA server on a prepared supported identity VM
+  hosts: ipaserver
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Require supported prepared OS and separately supplied secret inputs
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution in ['CentOS', 'RedHat', 'Fedora']
+          - ansible_facts.distribution_major_version | int >= (40 if ansible_facts.distribution == 'Fedora' else 9)
+          - ipaserver_domain is defined
+          - ipaserver_realm is defined
+          - ipaadmin_password is defined
+          - ipadm_password is defined
+          - ipaadmin_password | length >= 16
+          - ipadm_password | length >= 16
+          - ipaadmin_password != ipadm_password
+        fail_msg: Supported prepared Linux VM and independent Ansible Vault password inputs are required.
+      no_log: true
+  roles:
+    - role: freeipa.ansible_freeipa.ipaserver
+      state: present
+      no_log: true

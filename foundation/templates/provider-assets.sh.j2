@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Native OSC provider assets, after core cloud, before tenant Terraform.
+set -euo pipefail
+umask 077
+[[ "${ALLOW_PROVIDER_ASSETS:-}" == reviewed ]] || exit 2
+[[ '{{ foundation_inputs_reviewed | bool | ternary("true", "false") }}' == true ]] || { echo 'Review private foundation seed and re-render first' >&2; exit 2; }
+name={{ foundation_provider_name | quote }}
+type={{ foundation_provider_type | quote }}
+physnet={{ foundation_provider_physnet | quote }}
+vlan={{ foundation_provider_vlan | quote }}
+subnet={{ foundation_provider_subnet_name | quote }}
+cidr={{ foundation_provider_cidr | quote }}
+gateway={{ foundation_provider_gateway | quote }}
+start={{ foundation_provider_pool_start | quote }}
+end={{ foundation_provider_pool_end | quote }}
+receipt={{ foundation_runtime | quote }}/provider-assets
+mkdir -m 700 "$receipt" 2>/dev/null || [[ -d "$receipt" ]]
+python3 - "$type" "$vlan" "$cidr" "$gateway" "$start" "$end" <<'PY'
+import ipaddress,sys
+kind,vlan,cidr,gateway,start,end=sys.argv[1:]
+assert kind in ('flat','vlan') and (kind == 'flat' or 1 <= int(vlan) <= 4094)
+net=ipaddress.ip_network(cidr,strict=True)
+g,a,b=map(ipaddress.ip_address,[gateway,start,end])
+assert net.version == 4 and all(x in net and x not in (net.network_address,net.broadcast_address) for x in (g,a,b))
+assert a <= b and not a <= g <= b
+PY
+project=$(openstack project show {{ foundation_provider_owner_project | quote }} -f value -c id)
+# Never choose arbitrarily among duplicate names. Existing targets must match all inputs.
+network=$(openstack network list --name "$name" -f json | python3 -c 'import json,sys; a=json.load(sys.stdin); assert len(a)<=1, "Ambiguous provider network"; print(a[0]["ID"] if a else "")')
+if [[ -z "$network" ]]; then
+  args=(--external --share --project "$project" --provider-network-type "$type" --provider-physical-network "$physnet")
+  [[ "$type" != vlan ]] || args+=(--provider-segment "$vlan")
+  network=$(openstack network create "${args[@]}" "$name" -f value -c id)
+fi
+openstack network show "$network" -f json > "$receipt/network.json"
+python3 - "$receipt/network.json" "$name" "$project" "$type" "$physnet" "$vlan" <<'PY'
+import json,sys
+p,name,project,kind,physnet,vlan=sys.argv[1:]; d=json.load(open(p))
+assert d['name']==name and d['project_id']==project and d['router:external'] is True and d['shared'] is True
+assert d['provider:network_type']==kind and d['provider:physical_network']==physnet
+assert kind=='flat' or int(d['provider:segmentation_id'])==int(vlan)
+PY
+existing=$(openstack subnet list --network "$network" -f json | python3 -c 'import json,sys; a=json.load(sys.stdin); assert len(a)<=1, "Unexpected provider subnets"; print(a[0]["ID"] if a else "")')
+if [[ -z "$existing" ]]; then
+  existing=$(openstack subnet create --network "$network" --project "$project" --subnet-range "$cidr" --gateway "$gateway" --allocation-pool "start=$start,end=$end" --no-dhcp "$subnet" -f value -c id)
+fi
+openstack subnet show "$existing" -f json > "$receipt/subnet.json"
+python3 - "$receipt/subnet.json" "$subnet" "$project" "$network" "$cidr" "$gateway" "$start" "$end" <<'PY'
+import json,sys,ipaddress
+p,name,project,network,cidr,gateway,start,end=sys.argv[1:]; d=json.load(open(p))
+assert d['name']==name and d['project_id']==project and d['network_id']==network
+assert ipaddress.ip_network(d['cidr'])==ipaddress.ip_network(cidr) and d['gateway_ip']==gateway
+assert d['enable_dhcp'] is False and d['allocation_pools']==[{'start':start,'end':end}]
+PY
+# Exact network/subnet receipts retained privately. No implicit update/adoption on mismatch.

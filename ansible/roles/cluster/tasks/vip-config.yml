@@ -1,0 +1,20 @@
+---
+# For >=1.29 init, kube-vip needs super-admin until RBAC exists. It must use
+# the LOCAL API, not the VIP that it is itself about to advertise.
+- name: Read selected kube-vip credentials without exposing them
+  ansible.builtin.slurp:
+    src: '/etc/kubernetes/{{ vip_credentials_file }}'
+  register: vip_credentials
+  no_log: true
+- name: Write root-private node-local kube-vip kubeconfig
+  ansible.builtin.template:
+    src: vip.kubeconfig.j2
+    dest: /etc/kubernetes/kube-vip.conf
+    mode: '0600'
+  no_log: true
+  diff: false
+- name: Install digest-pinned kube-vip static pod manifest
+  ansible.builtin.template:
+    src: kube-vip.yml.j2
+    dest: /etc/kubernetes/manifests/kube-vip.yaml
+    mode: '0600'

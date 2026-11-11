@@ -1,0 +1,14 @@
+---
+- name: Create root-private Kubernetes state directory
+  ansible.builtin.file:
+    path: /etc/kubernetes
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+- name: Record immutable cluster ownership before bootstrap
+  ansible.builtin.copy:
+    content: '{{ expected_identity | to_nice_json }}'
+    dest: /etc/kubernetes/lab-kit-identity.json
+    mode: '0600'
+    force: false

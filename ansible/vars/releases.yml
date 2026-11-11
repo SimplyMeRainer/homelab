@@ -1,0 +1,9 @@
+---
+# Public release verification and checksums: README.md. Not automatic upgrades.
+kubernetes_version: '1.35.10'
+kubernetes_package_version: '1.35.10-1.1'
+kubernetes_minor: '1.35'
+kubernetes_key_sha256: '7627818cf7bae52f9008c93e8b1f961f53dea11d40891778de216fb1b43be54d'
+kube_vip_image: 'ghcr.io/kube-vip/kube-vip:v1.3.1@sha256:1962f9daf226503f7e6b107f595cb28b7917fd2d0113957075e19a3e5a6c1e33'
+cilium_version: '1.19.10'
+cilium_chart_sha256: 'b7252afca3413a33e2b987c954e52441e96979e411e1495ecc6aefe8cd258863'

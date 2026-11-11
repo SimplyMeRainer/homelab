@@ -1,0 +1,6 @@
+---
+- name: Refuse mismatched cluster or changed immutable inputs
+  ansible.builtin.assert:
+    that: (existing_identity.content | b64decode | from_json) == expected_identity
+    fail_msg: Mismatched cluster identity. No automatic reset, upgrade, endpoint change or topology adoption is supported.
+  when: ownership_marker.stat.exists

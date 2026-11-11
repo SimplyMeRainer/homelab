@@ -1,0 +1,15 @@
+---
+foundation_kolla_version: 22.2.0
+foundation_openstack_release: "2026.1"
+foundation_ansible_core_version: 2.20.11
+foundation_ceph_version: 19.2.7
+foundation_ceph_image: quay.io/ceph/ceph@sha256:3fc0a79f1c671f0e75be24ba77a4ab32227e5ea080e16dfc0840a1dc6c30bf7e
+foundation_cephadm_url: https://download.ceph.com/rpm-19.2.7/el9/noarch/cephadm
+foundation_cephadm_checksum: sha256:f69e05331715f4c4e44eb223224f4fec441556031857a299b377d29993697eb4
+foundation_octavia_commit: 131c1cf3180ad0ff0f1ab14a82daaace418164a1
+foundation_octavia_source_url: https://codeload.github.com/openstack/octavia/tar.gz/131c1cf3180ad0ff0f1ab14a82daaace418164a1
+foundation_octavia_source_sha256: 405a98ffe077f5c6e0349f45350528e064be4cd7c6ff85a65789033cf94f7a9e
+foundation_constraints_commit: e67312b6360a9da57677e07e0fb57abbfa28bca0
+foundation_constraints_url: https://raw.githubusercontent.com/openstack/requirements/e67312b6360a9da57677e07e0fb57abbfa28bca0/upper-constraints.txt
+foundation_constraints_sha256: 24d89fca8c40adaab651951bbd29b789c2f119ab698423843260217c1e381530
+foundation_dib_version: 3.40.2

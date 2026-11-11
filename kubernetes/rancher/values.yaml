@@ -1,0 +1,10 @@
+hostname: rancher.lab.example
+replicas: 1
+agentTLSMode: strict
+privateCA: true
+ingress:
+  ingressClassName: traefik
+  tls:
+    source: secret
+    secretName: tls-rancher-ingress
+# No bootstrapPassword in values: chart generates it in-cluster.

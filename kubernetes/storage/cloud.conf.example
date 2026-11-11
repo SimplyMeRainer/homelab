@@ -1,0 +1,7 @@
+# Nonsecret template ONLY. Create the real file mode 0600 outside source control.
+[Global]
+auth-url=https://identity.lab.example:5000/v3
+application-credential-id=SUPPLY_EXTERNALLY
+application-credential-secret=SUPPLY_EXTERNALLY
+region=RegionOne
+ca-file=/etc/cacert/ca-bundle.crt

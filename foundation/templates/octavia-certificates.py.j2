@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Native OpenSSL ceremony; not API/backend PKI. Never print secret diagnostics.
+Generate only on explicit operator invocation, never during render or tests.
+"""
+import os
+from pathlib import Path
+import subprocess
+import yaml
+
+
+def run(args, password=None):
+    # Password delivery through stdin, never inline passwords or argv.
+    result = subprocess.run(['openssl', *args], input=(password + '\n').encode() if password else None,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if result.returncode:
+        raise SystemExit('OpenSSL ceremony failed; protected workspace retained')
+
+
+def main():
+    if os.environ.get('ALLOW_OCTAVIA_CERTIFICATES') != 'reviewed':
+        raise SystemExit('Explicit isolated Octavia CA ceremony approval required')
+    os.umask(0o077)
+    runtime = Path({{ foundation_runtime | to_json }})
+    passwords = yaml.safe_load((runtime / 'kolla/passwords.yml').read_text())
+    secret = passwords['octavia_ca_password']
+    client_secret = passwords['octavia_client_ca_password']
+    assert isinstance(secret, str) and secret and '\n' not in secret
+    assert isinstance(client_secret, str) and client_secret and '\n' not in client_secret
+    work = runtime / 'octavia-ca'
+    work.mkdir(mode=0o700)  # refuse reissuance/overwrite; preserve renewal material
+    os.chdir(work)
+    for name, password in [('server', secret), ('client', client_secret)]:
+        run(['req', '-new', '-x509', '-newkey', 'rsa:4096', '-sha256', '-days', '3650',
+             '-keyout', name + '_ca.key.pem', '-out', name + '_ca.cert.pem',
+             '-subj', '/CN=foundation-octavia-' + name + '-ca',
+             '-addext', 'basicConstraints=critical,CA:TRUE',
+             '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-passout', 'stdin'], password)
+    run(['req', '-new', '-newkey', 'rsa:4096', '-nodes', '-keyout', 'client.key.pem',
+         '-out', 'client.csr.pem', '-subj', '/CN=foundation-octavia-controller'])
+    Path('client.ext').write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n')
+    run(['x509', '-req', '-in', 'client.csr.pem', '-CA', 'client_ca.cert.pem',
+         '-CAkey', 'client_ca.key.pem', '-CAcreateserial', '-days', '365', '-sha256',
+         '-extfile', 'client.ext', '-out', 'client.cert.pem', '-passin', 'stdin'], client_secret)
+    run(['verify', '-CAfile', 'client_ca.cert.pem', '-purpose', 'sslclient', 'client.cert.pem'])
+    Path('client.cert-and-key.pem').write_bytes(Path('client.cert.pem').read_bytes() + Path('client.key.pem').read_bytes())
+    target = runtime / 'kolla/config/octavia'
+    target.mkdir(mode=0o700)
+    for name in ['server_ca.cert.pem', 'server_ca.key.pem', 'client_ca.cert.pem', 'client.cert-and-key.pem']:
+        destination = target / name
+        with destination.open('xb') as stream:
+            stream.write(Path(name).read_bytes())
+        destination.chmod(0o600)
+    # Native Kolla defaults to a public insecure heartbeat value. Generate only
+    # during the explicitly approved ceremony and use its native merge override.
+    heartbeat = subprocess.run(['openssl', 'rand', '-hex', '32'], check=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
+    assert len(heartbeat) == 64 and all(c in '0123456789abcdef' for c in heartbeat)
+    with (runtime / 'kolla/config/octavia.conf').open('x') as stream:
+        stream.write('[health_manager]\nheartbeat_key = ' + heartbeat + '\n')
+
+
+if __name__ == '__main__':
+    main()
